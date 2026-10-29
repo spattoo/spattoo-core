@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { acrylicCfg, cutAssembly } from './acrylicConfig.js';
+import { WRITING_CUT, WRITING_FIT, writingFit } from '../constants.js';
 
 /* ── A third Look is a ROW, and every control asks `cut` rather than "is it acrylic" ─────────────
  *
@@ -22,9 +23,24 @@ const writing  = readFileSync(new URL('../canvas/AcrylicWriting.jsx', import.met
 
 describe('the Looks are a table', () => {
   it('declares all three, with the surfaces each one is offered on', () => {
-    expect(designer).toMatch(/cream:\s*\{ label: 'Piped cream', surfaces: \['top', 'side', 'board'\], cut: false/);
-    expect(designer).toMatch(/acrylic:\s*\{ label: 'Acrylic',\s+surfaces: \['top', 'side'\],\s+cut: true/);
-    expect(designer).toMatch(/fondant:\s*\{ label: 'Fondant',\s+surfaces: \['top', 'side', 'board'\], cut: true/);
+    expect(designer).toMatch(/cream:\s*\{ label: 'Piped cream', surfaces: \['top', 'side', 'board'\]/);
+    expect(designer).toMatch(/acrylic:\s*\{ label: 'Acrylic',\s+surfaces: \['top', 'side'\]/);
+    expect(designer).toMatch(/fondant:\s*\{ label: 'Fondant',\s+surfaces: \['top', 'side', 'board'\]/);
+  });
+
+  /* ⚠️ `cut` IS NOT WRITTEN HERE ANY MORE, and that is the fix this pins. The flags were literals in
+     this table AND absent from `WRITING_FIT`, so fondant was cut for every control on the card and
+     not cut for its starting SIZE — it fell through to cream's 0.8, twice the intended 0.4, on the
+     one Look whose letters are sized by width alone and so have no height clamp to hide it.
+     Reported as "why suddenly texts element showing too big". One source now; see writingFit.test.js
+     for the sizes themselves. */
+  it('takes `cut` from WRITING_CUT rather than repeating it', () => {
+    expect(designer).toMatch(/cut: WRITING_CUT\.cream/);
+    expect(designer).toMatch(/cut: WRITING_CUT\.acrylic/);
+    expect(designer).toMatch(/cut: WRITING_CUT\.fondant/);
+    for (const [style, cut] of Object.entries(WRITING_CUT)) {
+      expect(writingFit(style), style).toBe(cut ? WRITING_FIT.acrylic : WRITING_FIT.cream);
+    }
   });
 
   /* The toggle is built from the table, so a fourth material is a row and not another button. */

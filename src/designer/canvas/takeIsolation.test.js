@@ -261,18 +261,51 @@ describe('filming is isolated from designing', () => {
     });
   });
 
-  /* ── The grid floor is scenery for filming, and nothing else ───────────────────────────────────
+  /* ── The grid floor, and the room it lies in ───────────────────────────────────────────────────
    *
-   * Asked for by name — *"the grid lines for the canvas like in the marketing site? (only for the
-   * video capture)"* — and that parenthesis is the requirement. A baker approves a colour against
-   * the designer's own ground; graph paper under the cake changes what they are judging, and a
-   * thumbnail with it in is not the cake they sold.
+   * ⚠️ THIS TEST USED TO READ "reaches the canvas only inside a take", AND THAT IS NO LONGER TRUE.
+   * It was asked for that way — *"the grid lines for the canvas like in the marketing site? (only
+   * for the video capture)"* — and reversed by the same person on 2026-10-28: *"now the samething
+   * we should also give as baker settings. so a baker can customize the studio."* A baker may now
+   * dress the room they work in, grid included.
+   *
+   * Half the original reasoning was never true: a thumbnail cannot catch graph paper, because
+   * `CakeThumbnailScene` renders on alpha with no ground, no background and no floor. The other
+   * half — a baker judging a colour should not be looking at graph paper — survives as the DEFAULT,
+   * and the default is what is asserted here. What must not change is that NOTHING arrives unless
+   * somebody asked for it, which is the real subject of this file.
    */
-  it('reaches the canvas only inside a take', () => {
-    expect(designer).toMatch(/takeGrid=\{takeWindow && takeGrid\}/);
-    expect(designer).toMatch(/takeGridWall=\{takeWindow && takeGridWall\}/);
-    expect(canvas).toMatch(/\{takeGrid && <TakeGrid strength=\{takeGridStrength\} active=\{takeLensActive\} \/>\}/);
-    expect(canvas).toMatch(/\{takeGridWall && <TakeGridWall strength=\{takeGridStrength\} active=\{takeLensActive\} \/>\}/);
+  describe('the grid is a take\'s, or the baker\'s, and otherwise nobody\'s', () => {
+    it('comes from the take while one is open, and from the saved studio the rest of the time', () => {
+      expect(designer).toMatch(/takeGrid=\{takeWindow \? takeGrid : studioRoom\.grid\}/);
+      expect(designer).toMatch(/takeGridWall=\{takeWindow \? takeGridWall : studioRoom\.gridWall\}/);
+      expect(designer).toMatch(/takeGridStrength=\{takeWindow \? takeGridStrength : studioRoom\.gridStrength\}/);
+    });
+
+    /* ⚠️ THE DEFAULTS ARE THE CAPTURE PATH'S ANSWER. A thumbnail, a photo and every preview mount
+       CakeCanvas without these props, so "off" has to be what absence means — and `studioGround`
+       has to default to null for the same reason `takeGrid` defaults to false. This is the one
+       assertion standing between a baker's studio and a picture their customer sees. */
+    it('is off, and the room plain, for anything that does not ask', () => {
+      expect(canvas).toMatch(/\n\s*takeGrid = false,/);
+      expect(canvas).toMatch(/\n\s*takeGridWall = false,/);
+      expect(canvas).toMatch(/\n\s*studioGround = null,/);
+      expect(canvas).toMatch(/\n\s*filmGround = null,/);
+    });
+
+    /* The fade belongs to the take, not to the room: outside a take there is no lens, so
+       `takeLensActive` is false and a studio grid would fade straight back out. */
+    it('fades with the lens inside a take, and simply stays on outside one', () => {
+      expect(canvas).toMatch(/<TakeGrid strength=\{takeGridStrength\} active=\{takeLens != null \? takeLensActive : true\} \/>/);
+      expect(canvas).toMatch(/<TakeGridWall strength=\{takeGridStrength\} active=\{takeLens != null \? takeLensActive : true\} \/>/);
+    });
+
+    /* ⚠️ `filmGround` ALSO MEANS "WE ARE FILMING" — the FRONT marker keys off it. A studio ground
+       that reused it would take the marker off every baker who picked a swatch. Two names. */
+    it('keeps the FRONT marker on a baker who dressed their studio', () => {
+      expect(canvas).toMatch(/board && !filmGround && \(\s*\n?\s*<FrontMarker/);
+      expect(canvas).not.toMatch(/board && !sweepGround/);
+    });
   });
 
   /* ⚠️ THE SCENERY IS EASED, NOT SWITCHED, AND THAT WAS THE FLICKER. *"build video is flickering at

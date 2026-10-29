@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 import ThemePreview from '../storefront/ThemePreview.jsx';
 import { RailSkinSection } from './RailSkinSection.jsx';
+import { StudioLookSection } from './StudioLookSection.jsx';
 // SEC-CORE-4 — same pure helper the storefront renders through, so the input and
 // the sink can never disagree about what a valid handle is.
 import { normalizeIgHandle, BRAND_FONTS, brandFontCss, brandFontKey } from '../storefront/storefrontKit.js';
@@ -169,7 +170,7 @@ const HOUR_SLOTS = Array.from({ length: 36 }, (_, i) => {
  * have erased the other's keys, silently. spattoo-api now merges over the stored blob, gated by
  * check:settings-merge. Do not trim what a screen sends without reading that gate first.
  */
-export default function SettingsPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore, onRailSkinChanged, scope = 'all' }) {
+export default function SettingsPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore, onRailSkinChanged, onStudioLookChanged, scope = 'all' }) {
   const showStore    = scope === 'all' || scope === 'store';
   const showSettings = scope === 'all' || scope === 'settings';
   /* ⚠️ ITS OWN SCOPE, because it had none and was therefore unfindable. The chooser shipped inside
@@ -178,6 +179,12 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
      in settins." He is right, and it is the SAME mistake he caught a day earlier when the consent
      trail sat under that entry: a door is only a door if its label names what is behind it. */
   const showAppearance = scope === 'all' || scope === 'appearance';
+  /* ⚠️ ITS OWN SCOPE, FOR THE REASON DIRECTLY ABOVE. The studio first went in beside the rail skin
+     under `appearance` — and that entry only exists when there is more than one rail skin to pick
+     (migration 122 left one), so the whole screen was unreachable. The same fault, in the same
+     place, four weeks later: a door is only a door if its label names what is behind it, and
+     "Menu bar" does not name a backdrop. Found by opening Settings and looking for it. */
+  const showStudio = scope === 'all' || scope === 'studio';
   const isMobile = useIsMobile();
   const [settings, setSettings]     = useState(null);
   const [profile,  setProfile]      = useState(null);
@@ -667,6 +674,11 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                 <RailSkinSection apiClient={apiClient} onChanged={onRailSkinChanged} />
               )}
 
+              {showStudio && (
+                <StudioLookSection apiClient={apiClient} brandPrimary={profile.primary_color}
+                                   onChanged={onStudioLookChanged} />
+              )}
+
               {showSettings && (
               <>
               {/* ── Orders & Delivery ── */}
@@ -753,12 +765,16 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
               </>
               )}
 
-              {/* ⚠️ NOT ON THE APPEARANCE PAGE. A skin saves the moment it is tapped — the same
-                  immediate contract PrivacyDataSection's actions have, and its note says why they
-                  are "NOT part of Save Settings". Leaving the button here would offer a press that
-                  changes nothing on screen while implying the choice had not been kept yet, which
-                  is the dead-control rule with the failure hidden rather than obvious. */}
-              {!showAppearance || showSettings || showStore ? (
+              {/* ⚠️ NOT ON THE APPEARANCE PAGE, NOR THE STUDIO. A skin saves the moment it is
+                  tapped — the same immediate contract PrivacyDataSection's actions have, and its
+                  note says why they are "NOT part of Save Settings". Leaving the button here would
+                  offer a press that changes nothing on screen while implying the choice had not
+                  been kept yet, which is the dead-control rule with the failure hidden rather than
+                  obvious. The studio saves on every swatch and chip for the same reason — the
+                  preview IS the canvas behind the panel — so it inherits the same exclusion. It
+                  did not at first, and the page shipped with a Save button under a form that had
+                  already saved; seen by opening it. */}
+              {(!showAppearance && !showStudio) || showSettings || showStore ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
                 <button
                   onClick={handleSave}

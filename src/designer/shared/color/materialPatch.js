@@ -64,6 +64,27 @@ export function setMaterialPatch(mat, slot, patch) {
   if (patch) bag[slot] = patch; else delete bag[slot];
   const after = patchSignature(bag);
 
+  /* ⚠️ NO PATCHES LEFT → GIVE THE MATERIAL BACK TO THREE.JS, rather than leaving an inert pair of
+     overrides installed. Deleting the OWN properties restores `Material.prototype`'s no-op
+     `onBeforeCompile` and its default `customProgramCacheKey`, which returns the same string for
+     every material — so unpatched materials share one program again.
+     ⚠️ THIS DOES NOT WEAKEN THE `mat.uuid` RULE BELOW. That rule exists because a patch's uniform
+     bag is held BY IDENTITY, so two patched materials sharing a program would render the first
+     one's colours. With no patch there is no uniform bag, and nothing to collide.
+     ⚠️ AND IT IS THE NO-OP PATH THAT WAS COSTING THE MOST, which is not where anybody would look.
+     `StickerModel` calls `applyGradient` on every material of every 3D decoration whether or not
+     one is set (CakeCanvas.jsx), and with no gradient that lands here as `setMaterialPatch(mat,
+     'gradient', null)`. So a material that had NEVER been patched still left with a key of its
+     own. Measured on the "Animal theme" template, which uses no gradient at all: 27 shader
+     programs, 22 used exactly once, 13 byte-identical apart from `spat:<uuid>:none`. Every cake
+     carrying 3D decorations was paying it. */
+  if (!PATCH_ORDER.some(s => bag[s])) {
+    delete mat.onBeforeCompile;
+    delete mat.customProgramCacheKey;
+    if (before !== after) mat.needsUpdate = true;
+    return;
+  }
+
   /* ⚠️ READS THE LIVE BAG RATHER THAN CLOSING OVER IT, so a patch registered after this function
      ran is still injected by the program compiled later. */
   mat.onBeforeCompile = (shader, renderer) => {

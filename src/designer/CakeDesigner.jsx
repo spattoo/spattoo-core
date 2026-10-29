@@ -12,7 +12,10 @@ import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
-import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap, boardOf, rainbowSupportRadius } from './canvas/CakeCanvas';
+import { STUDIO_LOOK_DEFAULT, normaliseStudioLook, studioRoomFrom, studioInk, takeSeedFrom } from './studioLook.js';
+import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap, boardOf, rainbowSupportRadius,
+         releaseUnusedStickerArt } from './canvas/CakeCanvas';
+import { releaseUnusedGlbs } from './shared/retainedGlb.js';
 import { configureStrokeMeshes } from './canvas/strokeMesh.js';
 import { shellBand, wallYoBounds, stackedYoBounds, clampYo } from './geometry/boardBands.js';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, STICKER_SIZE } from './constants';
@@ -20,7 +23,7 @@ import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { useAnyLoading } from './canvas/loadingRegistry.js';
+import { useAnyLoading, whenCaptureIdle } from './canvas/loadingRegistry.js';
 import { isSinglePerSlot, placementSlots, flatPose, zonePoses, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
 import { corsUrl, assetUrl, elementIs3D } from './utils/assetUrl.js';
 import { registerRenderVariants } from './shared/renderVariants.js';
@@ -32,6 +35,7 @@ import TemplateGrid from './shared/TemplateGrid.jsx';
 import { REQUIRED_TAG_CATEGORIES, missingRequiredCategories, requiredTagMessage, ageRangeProblem } from '../shared/tagRequirements.js';
 import { Slider } from '../shared/Slider.jsx';
 import HelpAssistant from '../shared/HelpAssistant.jsx';
+import Appu from '../shared/Appu.jsx';
 import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
 import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
 
@@ -55,7 +59,7 @@ import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
-import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITING_COLOR,
+import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, WRITING_CUT, writingFit, FONDANT_WRITING_COLOR,
          THUMB_VIEWS, THUMB_VIEW_DEFAULT, THUMB_EL_MIN, THUMB_EL_MAX, thumbViewDir, BOARD_TOP_Y } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
@@ -629,15 +633,20 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
  * `!== 'acrylic'` meant "cream only" and would have silently switched itself on for fondant — a
  * Curve dial on a cutter-cut letter, a Thickness slider writing a field the builder does not read.
  */
+/* ⚠️ `cut` COMES FROM `WRITING_CUT`, NOT FROM A LITERAL HERE. The same fact decides the card's
+   controls and the starting SIZE (`writingFit`), and that one lives in constants.js because it must
+   be reachable from a pure module. Written out twice, fondant was marked cut here and absent there,
+   so its default size fell through to cream's — twice the intended size, on the one Look whose
+   letters have no height clamp to hide it. */
 const WRITING_LOOKS = {
-  cream:   { label: 'Piped cream', surfaces: ['top', 'side', 'board'], cut: false },
-  acrylic: { label: 'Acrylic',     surfaces: ['top', 'side'],          cut: true  },
+  cream:   { label: 'Piped cream', surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.cream },
+  acrylic: { label: 'Acrylic',     surfaces: ['top', 'side'],          cut: WRITING_CUT.acrylic },
   /* Fondant goes everywhere cream does — it is paste, and a flat letter sits on a drum as happily as
      on the cake. On the TOP it is the one Look with a choice to make, because both readings are real
      things bakers do: HUG (lying on the icing, the common one) or STAND (propped upright on prongs).
      Sandeep: "fondant letters can go on both side,top and board. on top, fondant letters can hug or
      stand." Acrylic has no such choice — a perspex sheet lying flat on a cake top is not a thing. */
-  fondant: { label: 'Fondant',     surfaces: ['top', 'side', 'board'], cut: true  },
+  fondant: { label: 'Fondant',     surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.fondant },
 };
 const SURFACE_LABELS = { top: 'Top', side: 'Side', board: 'Board' };
 const writingSurfaces = (style) => (WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).surfaces;
@@ -3506,14 +3515,43 @@ function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onS
 }
 
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null, initialLink = null, legalBase = DEFAULT_LEGAL_BASE }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null, initialLink = null, legalBase = DEFAULT_LEGAL_BASE,
+                            /* POC: { image, dim } for a backdrop being judged. See below. */
+                            studioBackdropPoc = null }) {
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierSand, updateSand, setBoardSand, updateBoardSand, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, loadGeneration, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierSand, updateSand, setBoardSand, updateBoardSand, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  /* ── Give the last design's models back, instead of waiting out the grace ───────────────────
+   *
+   * The GLB and sticker-art caches hold a decoration for two minutes after its last user goes, so
+   * that add / remove / re-add does not re-parse. A wholesale replacement is not that: load six
+   * templates inside the grace and six templates' models are resident at once, and texture is
+   * almost all of the cost — `retainedGlb.js` measures 16.3 of a model's 16.6 MB in its maps.
+   * Sandeep: *"when loading a new template its a new template, so we dont have to retain that."*
+   *
+   * ⚠️ AN EFFECT ON THE LOAD COUNTER, so it runs after the commit that swaps the design — the only
+   * moment when the outgoing models have been released and the incoming ones retained. Both sweeps
+   * respect ref counts, so anything the new design also uses is pinned and never re-parsed.
+   *
+   * ⚠️ AND A SETTLE DELAY, because a model is loaded through Suspense. A piece whose GLB is still
+   * in flight has not retained its entry yet, so sweeping in the same tick could free something
+   * about to be used and make it fetch twice. Two seconds is far short of the two-minute grace it
+   * replaces and long enough for the incoming pieces to have mounted. Cancelled on a re-load so
+   * flipping quickly through templates sweeps once, after the last one. */
+  useEffect(() => {
+    if (!loadGeneration) return undefined;
+    const t = setTimeout(() => {
+      const models = releaseUnusedGlbs();
+      const art = releaseUnusedStickerArt();
+      if (models || art) console.debug(`[design] freed ${models} model(s), ${art} artwork(s)`);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [loadGeneration]);
+
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -4560,6 +4598,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // (ThemePreview), which is the moment the list becomes public.
   const [flavoursUncurated, setFlavoursUncurated] = useState(false);
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
+  /* Mounted only while a capture is coming — see withCaptureCanvas. The order modal keeps it warm
+     for its whole life because the capture lands on submit, which is a button press away. */
+  const [captureCanvasOn,     setCaptureCanvasOn]     = useState(false);
   const [manualOrderOpen,     setManualOrderOpen]     = useState(false);   // baker's "New Order" (no designer)
   const [manualOrderDate,     setManualOrderDate]     = useState(null);    // pre-filled delivery date when started from the Orders calendar
   /* The catalogue photograph a manual order was started FROM, as [{ key, preview }] — the shape
@@ -4685,7 +4726,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const logoSrc = useTrimmedLogo(bakerData?.logo_url);
   // What this header draws — the mark, the name, or both. One accessor for both headers and for the
   // settings control, so they cannot disagree about what a stored choice means.
-  const brandParts = headerBrandParts(bakerData, !!logoSrc);
+  /* POC flags, read here because the HEADER needs them and the header is drawn before the canvas
+     is configured further down. `sign=only` is the "wall carries it instead" variant. */
+  const studioWallSign = studioBackdropPoc?.sign ?? false;
+  const studioWallSignOnly = studioWallSign === 'only';
+  const brandPartsStored = headerBrandParts(bakerData, !!logoSrc);
+  /* ⚠️ POC: THE WALL CAN CARRY THE NAME INSTEAD OF THE HEADER. Sandeep, on seeing it in both at
+     once: *"let it appear twice for now on the harness... if good, then we can remove it on the top
+     right."* `?sign=only` is that second look. The logo is untouched — this swaps where the NAME is
+     set, and a baker who has chosen "Logo only" never had a header name to lose. */
+  const brandParts = studioWallSignOnly
+    ? { ...brandPartsStored, name: false }
+    : brandPartsStored;
   // The bakery's name is the one piece of type in the app that belongs to the baker, so the face is
   // theirs too. One reader, shared with the settings preview and the storefront.
   const brandFont  = brandFontCss(bakerData);
@@ -4975,6 +5027,41 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      THAT is the fix. It rides the grid's own ramp, so the room assembles and dissolves as one
      move. See SceneBackground. */
   const onFilmGround = framing || buildSetupOpen || takeWindow;
+  /* ── The studio a baker dressed for themselves ──────────────────────────────────────────────────
+   *
+   * Sandeep: *"so a baker can customize the studio. we would save these settings and the baker
+   * would see theie selected look&feel."* Loaded once; `STUDIO_LOOK_DEFAULT` is the plain editing
+   * room, so every path below works unchanged for a baker who has never opened the setting — and
+   * for a host that does not serve it at all, which is every customer session and every harness.
+   *
+   * ⚠️ FETCHED, NOT PASSED IN. It belongs to the signed-in PERSON (baker_appusers, the way a rail
+   * skin does — migration 120 borrowing 060: "a tour is a fact about a PERSON, not about a
+   * bakery"), so the host cannot hand it over with the bakery profile without making it a bakery
+   * fact. A host with no `fetchStudioLook` simply never has one. */
+  const [studioLook, setStudioLook] = useState(STUDIO_LOOK_DEFAULT);
+  useEffect(() => {
+    if (!apiClient?.fetchStudioLook) return undefined;
+    let alive = true;
+    apiClient.fetchStudioLook()
+      .then(r => { if (alive) setStudioLook(normaliseStudioLook(r?.look ?? r)); })
+      .catch(() => {});        // a look that will not load is not worth a message; the room stays plain
+    return () => { alive = false; };
+  }, [apiClient]);
+  /* What the canvas is handed, which is not quite what was stored — `studioRoomFrom` drops a grid
+     that has no ground under it. See its note. */
+  const studioRoom = useMemo(() => studioRoomFrom(studioLook), [studioLook]);
+  /* The header row's ink, when the baker has dressed the studio — the band that used to sit behind
+     it is gone, so the name and the bell read off the ground instead. Null for a plain room, which
+     leaves every colour exactly as it was tuned. */
+  const chromeInk = studioInk(studioRoom.ground)?.chrome ?? null;
+
+  /* POC only, and deliberately NOT part of `studioLook` yet: a backdrop handed in by whoever is
+     judging it — the harness (`?bgimage=`) or admin's Studio Backdrop page — so it can be seen on a
+     real cake before anybody designs a setting, an upload path or a catalogue row around it.
+     A prop rather than a stored field, so there is nothing to migrate when it is thrown away. */
+  const studioBackdropImage = studioBackdropPoc?.image ?? null;
+  const studioBackdropDim = studioBackdropPoc?.dim ?? 0;
+  const studioBackdropFar = studioBackdropPoc?.far ?? 1;
   const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
@@ -5285,6 +5372,28 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Which ground the preview is showing, so the overlay can pick its contrast the same way the
   // recorder does. Mirrors what was handed to setGround; the scene holds a THREE.Color, not a hex.
   const [takeGround, setTakeGround] = useState(DESIGNER_GROUND);
+  /* ── A take starts in the baker's own studio ────────────────────────────────────────────────────
+   *
+   * The other half of the setting: having dressed the studio once, a baker should not re-dress it
+   * before every video. These are the panel's STARTING values and nothing more — every control in
+   * it still moves freely, and a take is where somebody tries something different.
+   *
+   * ⚠️ ON THE LOOK ARRIVING, NOT ON MOUNT. The fetch resolves after the first render, so seeding in
+   * `useState` would seed from the default every time and silently ignore the saved look. It runs
+   * once because the look is fetched once; if it ever reloads, the cost is a take panel returning
+   * to the baker's own studio, which is where it should have been.
+   *
+   * ⚠️ AND A DELIBERATE "NO GRID" SURVIVES. `takeSeedFrom` carries `grid: false` through rather
+   * than falling back to the take's own both-on default — see its note. */
+  useEffect(() => {
+    const seed = takeSeedFrom(studioLook, DESIGNER_GROUND);
+    setTakeGround(seed.ground);
+    setTakeBackdrop(seed.backdrop);
+    setTakeBackdropStrength(seed.backdropStrength);
+    setTakeGrid(seed.grid);
+    setTakeGridWall(seed.gridWall);
+    setTakeGridStrength(seed.gridStrength);
+  }, [studioLook]);
   // True while any decoration is still resolving. The same registry the canvas spinner reads —
   // deliberately not a second notion of "is it ready", which would drift from the visible one.
   const decorLoading = useAnyLoading();
@@ -5934,6 +6043,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           ...(railSkinCount > 1
             ? [{ id: 'appearance', label: 'Menu bar', open: () => setSettingsScope('appearance'), active: settingsScope === 'appearance' }]
             : []),
+          /* The room they design in. Its own entry for the same reason "Menu bar" has one — the
+             studio went in beside the rail skin first and inherited that entry's condition, which
+             is false on every account today, so it had no door at all.
+             ⚠️ ONLY WHEN THE HOST SERVES IT. An entry that opens an empty page is worse than no
+             entry; every customer session and every harness without the stub is such a host. */
+          ...(apiClient?.fetchStudioLook
+            ? [{ id: 'studio', label: 'Your studio', open: () => setSettingsScope('studio'), active: settingsScope === 'studio' }]
+            : []),
           /* ⚠️ NOTHING TEMPLATE-SHAPED LIVES HERE ANY MORE. "Manage templates" was a Settings entry
              for months, and briefly became "Spattoo templates" + "My templates". Both are gone: the
              three template screens are Templates ▸ Browse · Library · Catalogue on the rail — the
@@ -6318,9 +6435,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
     // Capture from the off-screen thumbnail canvas (no floor, flattened onto white) as a compact WebP.
     // Keep the blob here — the onSaveTemplate callback path hands the raw blob to the host.
-    thumbRenderNowRef.current?.();
-    const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
+    /* The save screen mounts its own visible canvas, already angled by the baker — that IS the
+       picture being saved, so this finds it rather than making a second one. */
+    const thumbnailBlob = await withCaptureCanvas(c => captureThumbnailBlob(c));
 
     // Same shared serializer as order + share (tiers carry shape/width/depth so a sheet
     // round-trips on reload).
@@ -10295,6 +10412,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__placeTestPattern = placeTestPattern;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
+    /* Patch one placed decoration, through the SAME updateSticker the card's controls call — so a
+       harness drives the real writer rather than a stand-in beside it. Written for the free-hand
+       solid stop (`geometry/cakeBody.js`): the move gizmo's arrows are three dragged meshes in the
+       scene, which is the one free-position writer a script cannot reach, and it is exactly the one
+       that could otherwise walk a piece in through a wall. */
+    window.__patchSticker = (id, patch) => { updateSticker(id, patch); return true; };
     /* Which copy of a decoration's artwork the cake is textured from. The ≤512 copies come from the
        catalogue (`render_key`, api migration 132) and are registered as rows load, so there is no
        way to exercise the SELECTION from a harness whose database has none. Takes the same rows
@@ -10901,10 +11024,49 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // "Share the draft": snapshot the current design + upload a thumbnail (same helpers as order
   // placement), then open the invite panel with it attached so the baker sends a customer straight
   // into THIS design. The design rides on the invite (design_snapshot) — no template row is created.
+  /* ── The capture canvas, mounted only when something is about to capture ───────────────────────
+   *
+   * ⚠️ IT USED TO BE MOUNTED THE WHOLE SESSION, AND THAT IS THE COST THIS REMOVES. The cake was
+   * built TWICE for every baker on every cake — once in the canvas they look at, once in a 400x400
+   * canvas parked off-screen — so that three buttons could capture a thumbnail instantly. Sandeep:
+   * *"its a poor idea to load the second canvas… not always we change and save as another
+   * template."* Measured before this change: two canvases on an empty cake with nothing on it.
+   *
+   * ⚠️ SAVE AS TEMPLATE NEVER NEEDED IT. That screen mounts its OWN visible one, which the baker
+   * can drag to angle the cake and point at a preset view — the capture belongs to the screen that
+   * shows it. Only the two SILENT captures, placing an order and sharing a draft, were being served
+   * by the off-screen copy.
+   *
+   * ⚠️ AND IT NEVER BLOCKS THE THING IT IS DECORATING. `whenCaptureIdle` resolves rather than
+   * rejects and always gives up eventually: a thumbnail that is a little early is a blemish, an
+   * order that will not submit is a lost cake. One retry, because the first frame after a mount can
+   * legitimately be empty and `captureThumbnailBlob` correctly refuses to upload nothing.
+   */
+  async function withCaptureCanvas(use) {
+    const canvasNow = () => thumbContainerRef.current?.querySelector('canvas') ?? null;
+    const already = !!canvasNow();
+    if (!already) setCaptureCanvasOn(true);
+    try {
+      /* Wait for the mount itself before waiting for its contents — the capture count starts at
+         zero, so asking "is it idle" of a canvas that does not exist yet answers yes. */
+      const mountDeadline = Date.now() + 3000;
+      while (!canvasNow() && Date.now() < mountDeadline) await new Promise(r => setTimeout(r, 50));
+      await whenCaptureIdle();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        thumbRenderNowRef.current?.();
+        const out = await use(canvasNow());
+        if (out != null) return out;
+        await new Promise(r => setTimeout(r, 400));
+      }
+      return null;
+    } finally {
+      if (!already) setCaptureCanvasOn(false);
+    }
+  }
+
   async function handleShareDraft() {
-    thumbRenderNowRef.current?.();
-    const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
+    const designThumbnailKey = await withCaptureCanvas(c =>
+      captureAndUploadThumbnail(c, apiClient, 'orders/thumbnails'));
     setInviteLiveSessionId(null);
     setShareDraftDesign({ designSnapshot: buildDesignSnapshot(design), designThumbnailKey });
     setInvitePanelOpen(true);
@@ -10913,9 +11075,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   async function handleOrderSubmit(formData) {
     // Thumbnail → R2 (never base64 in the JSON body) + the full design snapshot, via the
     // shared helpers so order / template / share all serialise identically.
-    thumbRenderNowRef.current?.();
-    const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
+    /* The order modal has been open since before this submit, so the canvas is already mounted and
+       warm — `withCaptureCanvas` finds it and skips straight to the capture. */
+    const designThumbnailKey = await withCaptureCanvas(c =>
+      captureAndUploadThumbnail(c, apiClient, 'orders/thumbnails'));
     const designSnapshot = buildDesignSnapshot(design);
 
     if (editingOrder) {
@@ -18306,7 +18469,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Hidden for the whole take window, so it does not reappear while the lens is still
           gliding back. */}
       {!isMobile && !takeWindow && (
-        <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0) }} />
+        /* ⚠️ THE BAND GAINS A GROUND ONLY WHEN THE STUDIO DOES, and that is the whole of the fix.
+           This rule has always been "the line between chrome and canvas" with nothing but a 1px
+           border to say so — fine while the canvas behind it was always pale, and unreadable the
+           moment a baker picked a dark ground: the brand name, the bell and the credits pill are
+           all dark ink sitting straight on the 3D scene. Found by rendering it, not by reading it.
+
+           ⚠️ THE CHROME'S OWN COLOUR, NOT A TINT OF THEIRS. The alternative was to re-ink the three
+           things in this band off `luminanceOf(ground)` — which is what reelCaption does for a
+           caption, and what every rail skin has to carry by hand because a 9px label on a mid-oak
+           handle measured 2.61:1. Three surfaces, one of which (the credits pill) already changes
+           colour by threshold, is three chances to get a contrast wrong. Keeping the chrome on the
+           chrome's ground is one chance, and the studio starts where the rule says it starts.
+
+           Absent for a baker who has chosen nothing, so nothing moves for anyone who has not. */
+        /* ⚠️ A CHOSEN STUDIO HAS NO BAND AND NO RULE — IT RUNS TO THE TOP OF THE PAGE. Sandeep:
+           *"removing the white banner for the baker name. lets merge that with studio. if grid
+           wall lines are opted, it ll extend till top."* The band was painted OVER the top of the
+           canvas, so taking it away moves nothing: it uncovers the studio that was always behind
+           it, and the wall — grid lines and all — reaches the top.
+           ⚠️ AND THE RULE GOES WITH IT. A 1px line ruled across a baker's chosen wall reads as a
+           fault rather than as chrome, and the band's whole purpose was to give that line a ground
+           to end on. Without the band there is no edge there to define.
+           ⚠️ THE ROW IS INKED INSTEAD OF BACKED, which is the trade this file turned down a day
+           ago and is right now: it was three surfaces then, it is two now (the credits pill brings
+           its own). `studioInk().chrome` is that ink, and the measurement is in its note.
+           Unchanged for a baker who has chosen nothing — no studio, band exactly as it was. */
+        <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0),
+                      ...(studioRoom.ground ? { borderBottom: 'none' } : {}) }} />
       )}
 
       {/* ⚠️ THE DESKTOP BRAND MOVED TO THE RIGHT-HAND CLUSTER — see `creditsFloat` below. It used to
@@ -19327,7 +19517,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ── Canvas area ── */}
         {/* data-tour: the cake itself is a WebGL canvas with no addressable parts, so the tour
             spotlights this whole area — which is exactly what "drag to spin it" refers to. */}
-        <div data-tour="canvas" style={{ ...s.canvasArea, ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
+        <div data-tour="canvas" style={{ ...s.canvasArea,
+                                         ...(studioRoom.ground ? s.canvasAreaStudio(studioRoom.ground) : {}),
+                                         ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
 
           {/* Credits, top-right over the canvas — where every tool that meters usage puts them, and
               where a baker looks for "what have I got left" without hunting a sidebar.
@@ -19345,7 +19537,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   rests, while the bell is a control that gets pressed. Kept in step with the header
                   cluster above — two placements of the same furniture, the trap Chef's Desk already
                   taught us to watch for. */}
-              {canManageStore && <NotificationBell apiClient={apiClient} onOpenLink={openNotificationLink} />}
+              {canManageStore && <NotificationBell apiClient={apiClient} onOpenLink={openNotificationLink}
+                                                   colour={chromeInk ?? undefined} />}
               {hasCap('billing:manage') && (
                 <CreditsPill apiClient={apiClient}
                   onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
@@ -19370,6 +19563,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 return (
                   <div style={{ ...s.topLogoText, ...s.desktopLogoText, fontFamily: brandFont,
                                 fontSize: size,
+                                /* The band behind this row is gone once a studio is chosen, so the
+                                   name inks off the ground instead of off nothing. See studioInk. */
+                                ...(chromeInk ? { color: chromeInk } : {}),
                                 /* ⚠️ SHRINK FIRST, THEN WRAP, NEVER CLIP. At the 15px floor the
                                    type has stopped giving way, so a name long enough to exhaust
                                    even that would keep growing LEFT — past the rail and off the
@@ -19528,6 +19724,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               filmGround={onFilmGround ? takeGround : null}
               filmBackdrop={takeBackdrop}
               filmBackdropStrength={takeBackdropStrength}
+              /* ── The baker's own room, the rest of the time ──────────────────────────────────
+                 A separate prop from `filmGround`, which doubles as "we are filming" — see
+                 CakeScene. Null unless the baker dressed the studio in Settings, so a baker who
+                 never opened that screen sees exactly the room they saw yesterday. */
+              studioGround={studioRoom.ground}
+              studioBackdrop={studioRoom.backdrop}
+              studioBackdropStrength={studioRoom.backdropStrength}
+              /* POC: a picture behind the cake. Not in the saved look yet — the harness and the
+                 admin studio pass it, so it can be judged before it becomes a setting. */
+              studioImage={studioBackdropImage}
+              studioImageDim={studioBackdropDim}
+              studioImageFar={studioBackdropFar}
+              /* POC: the bakery's name on the wall, in the baker's own brand face — the SAME
+                 `brandFontCss` the header reads, so the two can never show one bakery in two
+                 typefaces. */
+              studioSignName={studioWallSign ? (bakerData?.name ?? '') : ''}
+              studioSignFont={brandFont}
               /* Same flag that points the grid's fade, so backdrop and grid move together. */
               backdropActive={filmingTake || takePreRoll || buildSetupOpen || framing}
               // No sky and no floor — the cake on nothing. Only ever true for a photo.
@@ -19551,9 +19764,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               spin={filmSpin ? spinPlan : null}
               onSpinDone={() => setFilmSpin(false)}
               takeLens={takeWindow ? takeLens : null}
-              takeGrid={takeWindow && takeGrid}
-              takeGridWall={takeWindow && takeGridWall}
-              takeGridStrength={takeGridStrength}
+              /* ⚠️ ONE PAIR OF PROPS, TWO OWNERS. While a take is open the panel's own chips drive
+                 the grid; the rest of the time it is the baker's saved studio. Not two sets of
+                 grid props — the canvas draws one grid and should be told what it is, not asked
+                 to arbitrate between two sources. */
+              takeGrid={takeWindow ? takeGrid : studioRoom.grid}
+              takeGridWall={takeWindow ? takeGridWall : studioRoom.gridWall}
+              takeGridStrength={takeWindow ? takeGridStrength : studioRoom.gridStrength}
               onTakeFrame={buildSaving ? (() => takeFrame.current?.()) : null}
               takeLensActive={filmingTake || takePreRoll}
               onTakeLensReturned={() => setLensReturning(false)}
@@ -20061,7 +20278,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               sheet is open: you can rotate the cake to check the colour you just picked. */}
           {/* Lifts above whichever sheet is taller, for the same reason the canvas does — otherwise
               "Drag to rotate" sits behind the decoration card it is telling you about. */}
-          <div style={{ ...s.rotateHint, ...(bottomSheetH ? { bottom: bottomSheetH + 12 } : {}) }}>
+          {/* The hint's grey was chosen against the pale floor; on a dark studio it is nearly gone.
+              One derived pair for this and the FRONT marker — see studioInk. */}
+          <div style={{ ...s.rotateHint, ...(bottomSheetH ? { bottom: bottomSheetH + 12 } : {}),
+                        ...(studioInk(studioRoom.ground) ? { color: studioInk(studioRoom.ground).hint } : {}) }}>
             Drag to rotate
           </div>
 
@@ -23334,6 +23554,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         onUpgrade={() => { setSettingsScope(null); setBillingPanelOpen(true); }}
         // The rail redraws itself from the server's answer; the panel does not own what it looks like.
         onRailSkinChanged={refreshRailSkin}
+        /* ⚠️ THE ROOM CHANGES WHILE THEY ARE LOOKING AT THE SWATCH. Settings opens over the canvas,
+           so a baker picking a ground sees the cake behind it change — which is the whole reason
+           this is a live preference rather than a form with a Save button. Without this it would
+           take a reload, and a swatch that appears to do nothing gets tapped again. */
+        onStudioLookChanged={setStudioLook}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}
@@ -23503,7 +23728,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           to show the baker what will be saved. Two mounts would be two canvases and
           `thumbContainerRef` would hold whichever rendered last — so the picture on screen and the
           picture captured could differ, which is the one thing this feature exists to stop. */}
-      {!saveModal && (
+      {!saveModal && (orderModalOpen || captureCanvasOn) && (
         <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef}
           renderNowRef={thumbRenderNowRef} viewDir={thumbViewDir(thumbView)} />
       )}
@@ -23525,6 +23750,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {orderMode === 'baker' && (
         <HelpAssistant
           apiClient={apiClient}
+          character={Appu}
           isMobile={isMobile}
           bottomInset={isMobile ? MOBILE_BAR_H : 0}
           hidden={onFilmGround}
@@ -24178,6 +24404,9 @@ const s = {
     // top, floor at the bottom, like the frame the strip sits beside.
     background:`linear-gradient(to bottom, ${DESIGNER_WALL}, ${DESIGNER_GROUND})`,
   },
+  /* The same strip, for a baker who dressed the studio. One flat colour rather than a gradient,
+     because that is what the 3D scene behind it now is — a cyclorama has no horizon to match. */
+  canvasAreaStudio: (ground) => ({ background: ground }),
   hint: {
     position:'absolute', top:14, left:'50%', transform:'translateX(-50%)',
     zIndex:10, background:'rgba(107,45,66,0.7)', color:'#fff',

@@ -83,6 +83,22 @@ const glbCache = makeRefCountedCache({
   },
 });
 
+/* Give back every model nothing is using, now, instead of waiting out the two-minute grace.
+ *
+ * Called when a whole design is REPLACED — loading a template, or starting a new cake. The grace
+ * above is for a baker adding and removing one decoration; a template load is a clean break, and
+ * six of them inside two minutes kept six templates' models resident at once. Texture is almost
+ * all of that: the measurement at the top of this file puts 16.3 of a model's 16.6 MB in its maps.
+ *
+ * ⚠️ AFTER THE NEW DESIGN IS MOUNTED, NEVER BEFORE. `sweepUnused` only frees what has no live
+ * user, which is what makes it safe — but it means the timing is the whole trick. Called before
+ * the swap, the outgoing pieces are still mounted, everything is pinned, and it frees nothing;
+ * called after, the outgoing-only models have been released and go, while anything the incoming
+ * design also uses is already retained by its own pieces and is neither disposed nor re-parsed. */
+export function releaseUnusedGlbs() {
+  return glbCache.sweepUnused();
+}
+
 /**
  * `useGLTF`, plus a lifetime. Drop-in: returns exactly what useGLTF returns, so a call site changes
  * one word and cannot half-apply the change — there is no separate "remember to retain" step to

@@ -71,6 +71,7 @@ export { default as AuthGate } from './auth/AuthGate.jsx';
 // its own shell rather than CakeDesigner (admin, and any future customer surface); the baker app
 // gets it for free because CakeDesigner mounts it.
 export { default as HelpAssistant } from './shared/HelpAssistant.jsx';
+export { default as Appu } from './shared/Appu.jsx';
 export { default as HelpMarkdown } from './shared/helpMarkdown.jsx';
 export { useCakeDesign, toCanvasConfig, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
 export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer/constants.js';
@@ -259,7 +260,11 @@ export { SHELL_HEIGHT_FRAC } from './designer/canvas/pipingMetrics.js';
  * (INVARIANTS #17). `SceneBackground` and `DESIGNER_GROUND` are part of it: the ground is a SCENE
  * background, so it is in the render — a studio that paints a different colour behind a transparent
  * canvas is judging its subject against a surround no cake has. */
-export { SceneLights, SceneEnv, SceneBackground } from './designer/canvas/CakeCanvas.jsx';
+export { SceneLights, SceneEnv, SceneBackground, StudioWall } from './designer/canvas/CakeCanvas.jsx';
+/* The backdrop's standing board and the floor colour it ends on — exported together because they are
+   one idea: a picture in the room needs the floor to continue it, and a studio that reproduced the
+   board but not the floor would show a join the designer does not have (INVARIANTS #15). */
+export { baseColourOf, BASE_BAND } from './designer/studioBackdrop.js';
 /* ⚠️ A HOST THAT MOUNTS SceneEnv MUST BE ABLE TO SAY WHERE THE MAP IS, and until this it could not.
    SceneLights and SceneEnv were both on this surface and `configureEnvMap` was not, so spattoo-admin
    — which mounts them in a dozen studios — had no way to reach it and every studio fell back to

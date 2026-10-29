@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState, useCallback, useSyncExternalStore, Suspense } from 'react';
+import { useRef, useMemo, useEffect, useState, useCallback, useContext, useSyncExternalStore, createContext, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
 import { useRetainedGlb, disposeGlbInstance, disposeGlbGeometries } from '../shared/retainedGlb.js';
@@ -16,6 +16,8 @@ import CakeTier from './CakeTier';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
 import { SafeEnvironment } from './safeEnvironment.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
+import { baseColourOf, wallTilt } from '../studioBackdrop.js';
+import { paintSign, signFontSpec } from '../studioSign.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
 import { wireFor, wireLift, wireStandoff } from '../geometry/elementWire.js';
 import CreamWriting from './CreamWriting.jsx';
@@ -135,6 +137,8 @@ function sandRegion(sand) {
 }
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
+import { cakeBody, clampOutsideBody } from '../geometry/cakeBody.js';
+import { studioInk } from '../studioLook.js';
 import { textPathFor } from '../geometry/textPath.js';
 import { cleanTriangles } from '../geometry/glbClean.js';
 import { outwardBand, rimBand } from './useSeatedInstances.js';
@@ -882,14 +886,30 @@ function createFoldedPlane(size, foldRad, spine, riseRad = 0) {
 // type-aware. `rise` (= sin(fold) when standing) lifts a pixel by |x − spine|·rise, so a low wing
 // pixel that hangs below the body in the flat image rises ABOVE the spine in 3D — making the body the
 // true support and the wings clear. rise 0 → seatHalf === down.
+/* ⚠️ SCANNED SMALL, AND THE ARITHMETIC BELOW IS WHY THAT IS FREE. Every coordinate this computes
+   is a FRACTION — `px / w`, `py / h` — so the answer is in plane units and does not depend on how
+   many pixels were read to get it. A catalogue sticker is 1024×1024; eleven of them on one cake is
+   11.5 Mpx walked one pixel at a time and 44 MB of `getImageData`, which profiled at 1.16s in this
+   function plus 1.21s in the readback — about half the load of an all-2D cake.
+   ⚠️ 256 IS A MEASURED PRECISION, NOT A GUESS. Compared against the full-resolution scan on all
+   eleven assets of the "Jungle theme cake" template, the worst any extent moved was **0.0049 of
+   the sticker** — about 1.25 scanned pixels, and a quarter of the `MIN_SEAT` floor of 0.02 that
+   already guards this value. The scan itself went 99ms → 10ms across those eleven.
+   ⚠️ AND THE THRESHOLD SURVIVES THE RESAMPLE. drawImage filters, which softens an alpha edge — it
+   can only spread opacity outward, and `> 8` of 255 is low enough that a hairline feature still
+   clears it (a 1px line at 1024 lands near alpha 64 at 256). Erring outward is also the safe
+   direction here: a seat that is a hair generous beats one that floats. */
+const SCAN_MAX = 256;
 function scanContentV(img, spine, rise) {
   const half = STICKER_SIZE / 2;
-  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-  if (!w || !h) return { seatHalf: half, down: half, up: half };
+  const nw = img.naturalWidth || img.width, nh = img.naturalHeight || img.height;
+  if (!nw || !nh) return { seatHalf: half, down: half, up: half };
+  const k = Math.min(1, SCAN_MAX / Math.max(nw, nh));
+  const w = Math.max(1, Math.round(nw * k)), h = Math.max(1, Math.round(nh * k));
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0);
+  ctx.drawImage(img, 0, 0, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;          // throws if the canvas is CORS-tainted
   const xh = STICKER_SIZE * (spine - 0.5);
   let minSeatY = Infinity, minY = Infinity, maxY = -Infinity;
@@ -1029,6 +1049,16 @@ const stickerAlbedoCache = makeRefCountedCache({
     try { useTexture.clear(url); } catch { /* drei may have evicted it already */ }
   },
 });
+
+/* The albedo half of a wholesale design swap — see `releaseUnusedGlbs` for the models.
+ *
+ * ⚠️ BOTH CACHES OR NEITHER. These two hold the two halves of a decoration's cost: the GLB cache
+ * its models, this one the 2D artwork. They were written separately and have the same lifetime for
+ * the same reason, so a template load that swept only one would give back half of what it should
+ * and look like a fix that did not work. */
+export function releaseUnusedStickerArt() {
+  return stickerAlbedoCache.sweepUnused();
+}
 
 /* Pin the loaded artwork for as long as this component is mounted. `useTexture` still does the
    loading and the suspending; this only decides when the result may be let go. Both the albedo and
@@ -2169,6 +2199,9 @@ function ElementWire({ wire }) {
 }
 
 function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bend = 1, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, calendar = null, calendarValues = null, calendarLayout = null, onSeat, onDepth, onVExtent }) {
+  /* Which of the two canvases this copy is in — the label the loading probe reports. See
+     SceneKindContext: the same decoration mounts in both, and only the root tells them apart. */
+  const sceneKind = useContext(SceneKindContext);
   // ⚠️ BEFORE the imageUrl guard, which is the whole reason this branch exists here rather than
   // deeper down: a calendar element carries no image_url, so the guard below would render nothing at
   // all and the decoration would vanish the moment it was placed. Config-gated on
@@ -2184,7 +2217,11 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
     // shared loading count (it draws nothing); a single canvas overlay shows ONE spinner for the
     // whole page (see loadingRegistry). Suspense clears the ping when the asset resolves
     // (cached assets resolve synchronously → never counted). Type/zone-agnostic.
-    <SafeGlb screen="CakeCanvas">
+    /* `counts` — the capture canvas loads the same decorations into its own React root, and its
+       boundaries were holding the page spinner for sixteen seconds after the cake was drawn. The
+       spinner speaks for the live scene; see loadingRegistry. */
+    <SafeGlb screen="CakeCanvas" channel={sceneKind === 'live' ? 'live' : 'capture'}
+             label={`${sceneKind} ${isGlb ? 'glb' : 'img'} ${String(imageUrl ?? '').split('/').pop()}`}>
       {isGlb
         ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} recolourable={recolourable} roughness={roughness} metalness={metalness} surface={surface} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
         : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} bend={bend} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} textSlots={textSlots} textValues={textValues} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
@@ -2300,7 +2337,7 @@ function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown,
 // Gated in the MOVE handler rather than at pointer-down on purpose: selection, long-press, the
 // toolbar and orbit-blocking all still behave exactly as before. A pinned decoration can still be
 // picked up, looked at and edited — it just does not go anywhere.
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, body = [], reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -2464,6 +2501,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     if (![p.x, p.y, p.z].every(Number.isFinite)) return;
     onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
   }, [sticker.freeHand, sticker.freePos, sticker.id]);
+  useSolidStop(sticker, body, onMove);
 
   /* The wall's outward group IS the face: its local +Z points out of the cylinder. See
      useFacePoseReport — the pose is read off the object rather than rebuilt from these locals. */
@@ -2566,9 +2604,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
               if (!fd) return;
               const hit = planePoint(pointerRay(ev, gl.domElement, camera), fd.plane);
               if (!hit) return;
-              const g = fd.grab ?? { x: 0, y: 0, z: 0 };
-              onMove(sticker.id, { freePos: {
-                x: +(hit.x - g.x).toFixed(4), y: +(hit.y - g.y).toFixed(4), z: +(hit.z - g.z).toFixed(4) } });
+              onMove(sticker.id, { freePos: freeHandPos(hit, fd.grab, freeHandStop(sticker, body), body) });
               didDrag.current = true;
               return;
             }
@@ -2656,13 +2692,81 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * is looking at: the decoration follows the pointer exactly, and depth is left to the gizmo's third
  * arm rather than guessed from a 2D gesture.
  */
+/* ── Free hand, and the one rule it does NOT release ─────────────────────────────────────────────
+ *
+ * Free hand stands the seating rules down so the baker decides where a piece goes. It does not make
+ * the cake hollow: a fondant monkey is a body, and a body is stopped by icing. A decoration that
+ * genuinely goes IN — a flower on a wire, a pick — says so on its row (`placement_config.pierces`)
+ * and gets nothing in its way, which is INVARIANTS #3b's config flag rather than a branch on what
+ * the element is. Returns null when there is nothing to stop this piece, so a caller can skip the
+ * whole question. See geometry/cakeBody.js.
+ *
+ * ⚠️ THE MEASUREMENT IS THE ONE THE SEATED DRAG USES. `occupantFootprint` + `footprintReach` is how
+ * far this piece reaches THE WAY IT IS GOING — the answer that stopped a Gingko leaf being held off
+ * a rim by its width. A second size rule here would stop a hand-placed piece at a different
+ * distance from a seated one on the same cake. Before the GLB has loaded the cache is empty and
+ * `occupantFootprint` falls back to its nominal half-size, which is the same fallback every other
+ * caller gets; the next move re-asks with the measurement.
+ */
+function freeHandStop(sticker, body) {
+  if (sticker?.freeHand !== true || sticker.pierces === true || !body?.length) return null;
+  const half = glbHalfCache[sticker.imageUrl];
+  const fp = occupantFootprint(sticker, half);
+  return {
+    hy: (half?.hy ?? STICKER_SIZE / 2) * (sticker.scale ?? 1),
+    reachAt: dir => footprintReach(fp, dir),
+  };
+}
+
+/* Where a free-hand drag has put the piece — the grabbed point on the camera plane, pushed back out
+   of the cake if it went in. Clamped HERE, where the value is written, not at the render: a piece
+   whose stored position disagrees with its picture leaves its own gizmo somewhere it is not
+   (INVARIANTS, "clamp where the value is WRITTEN"). It is also why this is not left to the
+   correcting effect below — that writes a second time after the frame, so pushing into a wall
+   would alternate between in and out on every move instead of simply stopping. */
+function freeHandPos(hit, grab, stop, body) {
+  const g = grab ?? { x: 0, y: 0, z: 0 };
+  const raw = { x: hit.x - g.x, y: hit.y - g.y, z: hit.z - g.z };
+  const p = stop ? clampOutsideBody(body, raw, stop) : raw;
+  return { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) };
+}
+
+/* The same rule for every OTHER way a free position can be written — the card's move gizmo, and the
+   one-time seed when free hand is first switched on. The drag clamps its own value, so this never
+   fires during one; it exists so the gizmo's arrows cannot walk a piece in through the wall, which
+   is the half a drag-only clamp would miss. A clamped position is its own fixed point, so the
+   correction settles in one write and cannot loop. */
+function useSolidStop(sticker, body, onMove) {
+  const fp = sticker.freeHand === true ? (sticker.freePos ?? null) : null;
+  useEffect(() => {
+    if (!fp) return;
+    const stop = freeHandStop(sticker, body);
+    const out = stop ? clampOutsideBody(body, fp, stop) : null;
+    /* ⚠️ THE TERMS, PUBLISHED, for the same reason `__footSeat` publishes its own just below: "it
+       went nowhere" and "it was already clear" look identical on a render, and this has already
+       cost one wrong diagnosis. Driving the harness, `window.__solidStop` said the clamp WAS
+       running and WAS returning a different position — which is what turned the hunt from "why is
+       nothing wired" into "what is it computing", and the answer was a piece being let out through
+       the bottom of a tier onto the board. */
+    if (import.meta.env?.DEV && typeof window !== 'undefined') {
+      window.__solidStop = { id: sticker.id, fp, out, slabs: body ?? [],
+                             reach: stop ? { hy: +stop.hy.toFixed(4), x: +stop.reachAt({ x: 1, z: 0 }).toFixed(4) } : null,
+                             freeHand: sticker.freeHand, pierces: sticker.pierces };
+    }
+    if (!stop || !out) return;
+    if (Math.abs(out.x - fp.x) < 1e-3 && Math.abs(out.y - fp.y) < 1e-3 && Math.abs(out.z - fp.z) < 1e-3) return;
+    onMove(sticker.id, { freePos: { x: +out.x.toFixed(4), y: +out.y.toFixed(4), z: +out.z.toFixed(4) } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fp?.x, fp?.y, fp?.z, sticker.id, sticker.scale, sticker.pierces, body]);
+}
+
 function freeDragPlane(camera, at) {
   const n = new THREE.Vector3();
   camera.getWorldDirection(n);
   return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
 }
 
-function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, body = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2976,6 +3080,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     if (![p.x, p.y, p.z].every(Number.isFinite)) return;
     onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
   }, [sticker.freeHand, sticker.freePos, sticker.id]);
+  useSolidStop(sticker, body, onMove);
   const footYaw = footSeat ? surfaceYaw(sticker) : 0;
   const footX = footSeat ? (footSeat.x * Math.cos(footYaw) + footSeat.z * Math.sin(footYaw)) * effScale : 0;
   const footZ = footSeat ? (-footSeat.x * Math.sin(footYaw) + footSeat.z * Math.cos(footYaw)) * effScale : 0;
@@ -3099,9 +3204,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
         if (!fd) return;
         const hit = planePoint(pointerRay(ev, gl.domElement, camera), fd.plane);
         if (!hit) return;
-        const g = fd.grab ?? { x: 0, y: 0, z: 0 };
-        onMove(sticker.id, { freePos: {
-          x: +(hit.x - g.x).toFixed(4), y: +(hit.y - g.y).toFixed(4), z: +(hit.z - g.z).toFixed(4) } });
+        onMove(sticker.id, { freePos: freeHandPos(hit, fd.grab, freeHandStop(sticker, body), body) });
         didDrag.current = true;
         return;
       }
@@ -3584,17 +3687,28 @@ function CameraSnapper({ snapCameraRef, turnCameraRef, orbitRef }) {
  */
 const FRONT_MARKER_GAP = 0.22;
 
-function FrontMarker({ frontZ }) {
+/* ⚠️ `lift` EXISTS BECAUSE 0.002 IS NOT ENOUGH OVER THE SWEEP'S FLOOR, and that was found by
+ * rendering it: on every studio ground, light and dark, FRONT simply was not there. The editing
+ * room reaches the marker over a painted floor that writes no depth; the sweep reaches it over the
+ * shadow catcher alone, and at two millimetres the marker loses. Measured by raising it — at 0.05
+ * it draws cleanly on a cream ground.
+ *
+ * ⚠️ AND THE EDITING CASE KEEPS ITS 0.002 EXACTLY. That number is the other half of a pair the
+ * floor's own note records — "a catcher raised even 2 mm covered the FRONT marker" — so the two
+ * were tuned against each other and a baker who has chosen nothing must get the proven one. */
+function FrontMarker({ frontZ, colour = '#8a7a66', lift = 0.002 }) {
   return (
     <Text
       font={textFont}          // SEC-WEB-7 — bundled; omitting it re-introduces the jsdelivr fetch
-      position={[0, 0.002, frontZ + FRONT_MARKER_GAP]}
+      position={[0, lift, frontZ + FRONT_MARKER_GAP]}
       rotation={[-Math.PI / 2, 0, 0]}
       fontSize={0.11}
       // Deeper than the #c8b8a2 it was: on the #e5e2de studio floor that sat only just below the floor and
       // read as faint, and #a3927c was still asked to go a step darker. Still the same warm family, so it
       // guides without competing with the cake.
-      color="#8a7a66"
+      /* The default is the colour this was tuned to on the pale editing floor; a baker who dressed
+         the studio dark gets the lighter one. See studioInk — derived, not authored per ground. */
+      color={colour}
       anchorX="center"
       anchorY="middle"
       letterSpacing={0.06}
@@ -3800,6 +3914,27 @@ function CakeScene({
    *
    * It also doubles as "we are filming", which is why the front marker keys off it. */
   filmGround = null,
+  /* ── The baker's OWN room, while editing ────────────────────────────────────────────────────────
+   *
+   * The ground a baker chose in Settings, or null for the editing room as it has always been. It
+   * dresses the scene exactly as `filmGround` does — one colour edge to edge, no horizon join — and
+   * it is a SEPARATE prop on purpose.
+   *
+   * ⚠️ `filmGround` DOUBLES AS "WE ARE FILMING", which is why the FRONT marker keys off it (see
+   * below) and why the lens, the countdown and the recorder all read it. Reusing it to paint a
+   * chosen room would have taken the FRONT marker off every baker who picked a swatch, for a
+   * reason that has nothing to do with filming. Two names, because they are two questions.
+   *
+   * See studioLook.js for what a look is and why the grid is no longer filming-only. */
+  studioGround = null,
+  studioBackdrop = 'flat',
+  studioBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
+  /* POC: a picture behind the cake instead of a colour. See SceneBackground. */
+  studioImage = null,
+  studioImageDim = 0,
+  studioImageFar = 1,
+  studioSignName = '',
+  studioSignFont = 'sans-serif',
   /* The take's backdrop: a graded sweep generated from `filmGround` — see takeBackdrop.js.
      'flat' (the default) is the single colour that shipped before it, and the editing path never
      passes anything else: a baker approves a cake on the designer's own ground. */
@@ -4109,6 +4244,31 @@ function CakeScene({
 
   const onFloorClick = e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); };
 
+  /* The cyclorama's colour, from whichever asked for one. Named once because three places below
+     have to agree about it — the sky, the floor and whether there is a horizon at all — and the
+     first version of the studio look had them disagree: a painted floor under a swept sky. */
+  /* ── The floor a standing backdrop needs ────────────────────────────────────────────────────
+   *
+   * ⚠️ A BOARD ON A GREY FLOOR IS A BOARD ON A GREY FLOOR. Standing the picture in the scene fixed
+   * the floating cake, and immediately showed the next fault: the picture's own floor stopped in a
+   * hard line and ours carried on in grey underneath it — *"cake looks like floating and not
+   * matching with the ambiance in image"* answered in the vertical and reopened in the horizontal.
+   * So the ground takes the colour the picture ENDS on, and the join disappears. See
+   * `studioBackdrop.js` for why it is the bottom band and not the average.
+   *
+   * ⚠️ IT IS A GROUND LIKE ANY OTHER, which is what makes it cheap: it goes in at `studioGround`'s
+   * place, so the sweep, the shadow catcher, the FRONT marker's lift and the header's re-inking all
+   * already handle it. Nothing new had to learn about backdrops. */
+  const backdropFloor = useBackdropFloor(studioImage);
+  /* ⚠️ THE ROOM, HOWEVER IT WAS CHOSEN. A floor read off a backdrop is a chosen ground in every way
+     that matters downstream — the backdrop's shading, the FRONT marker's ink and its lift over the
+     shadow catcher all ask "is the baker standing on a sweep?", and the answer is yes whether the
+     colour came from a swatch or from the bottom of a photograph. Asking `studioGround` alone is how
+     the marker went unreadable on the tiled floor in the first render. */
+  const roomGround = studioGround || backdropFloor;
+  const sweepGround = filmGround || roomGround;
+
+
   return (
     <>
       <SceneLights shadows />
@@ -4118,8 +4278,12 @@ function CakeScene({
           with every pixel at alpha 255. The build was clean, the prop arrived as `true`, and the
           only way to see it was to read scene.background out of a running page.
           Absence has to be a VALUE somebody sets, so one component owns the background outright. */}
-      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_WALL)}
-                       look={filmGround ? filmBackdrop : 'flat'} strength={filmBackdropStrength}
+      {/* ⚠️ ONE SWEEP, WHOEVER ASKED FOR IT. Filming wins when both are set — a take is a deliberate
+          act with its own panel open, and the ground on screen while recording must be the one in
+          that panel. Otherwise the baker's own room, and failing that the editing wall. */}
+      <SceneBackground colour={filmCutout ? null : (sweepGround || DESIGNER_WALL)}
+                       look={filmGround ? filmBackdrop : (roomGround ? studioBackdrop : 'flat')}
+                       strength={filmGround ? filmBackdropStrength : studioBackdropStrength}
                        active={backdropActive} />
       <SceneEnv />
 
@@ -4129,7 +4293,7 @@ function CakeScene({
           nothing for it to fall on. */}
       {/* ⚠️ The floor goes with the sky. A cutout with the floor still in shot is a cake sitting on
           a grey slab on a transparent background — so no floor at all for a cutout. */}
-      {!filmCutout && (filmGround ? (
+      {!filmCutout && (sweepGround ? (
         <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={onFloorClick}>
           {/* WHILE FILMING: a shadow catcher over a flat ground, so floor and sky are the same pixels and
               no take carries a horizon. MUCH bigger than the editing floor, so its edge is never in a
@@ -4171,7 +4335,10 @@ function CakeScene({
       {/* ⚠️ Not while filming. It is an editing aid — it tells the baker which way the cake faces
           while they work — and it was being burned into finished reels, where it reads as a stray
           watermark nobody can explain. */}
-      {board && !filmGround && <FrontMarker frontZ={boardFrontZ(board)} />}
+      {board && !filmGround && (
+        <FrontMarker frontZ={boardFrontZ(board)} colour={studioInk(roomGround)?.marker}
+                     lift={roomGround ? 0.05 : undefined} />
+      )}
 
       {/* THE CAKE. Every element the design contains is drawn by CakeContent — the same component the
           off-screen capture and the read-only previews render, so what a customer sees and what the
@@ -4573,6 +4740,11 @@ function CakeContent({ config, scene, edit = null }) {
   }, []);
   const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, boardGyp = null, boardSand = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
+  /* What a hand-placed decoration may not be pushed into. One memo, because both draggables need
+     the same answer and a free-hand piece can be dragged into ANY tier, not only the one whose zone
+     it was dropped on. Empty while there are no tiers, which `clampOutsideBody` treats as no
+     constraint — the honest answer for a cake with nothing on it. See geometry/cakeBody.js. */
+  const solidBody = useMemo(() => cakeBody(tierData, board), [tierData, board]);
   const {
     orbitRef = null, gestureOnStickerRef = null,
     selectedGarnishId = null, onGarnishSelect = NOOP, onGarnishMove = null,
@@ -5377,6 +5549,7 @@ function CakeContent({ config, scene, edit = null }) {
               baseY={tier.baseY}
               height={tier.height}
               shp={tierShape(tier)}
+              body={solidBody}
               reliefSampler={tierReliefSampler(tier)}
               pipingBands={resolveSidePipingBands({
                 topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
@@ -5434,6 +5607,7 @@ function CakeContent({ config, scene, edit = null }) {
             shp={isBoard ? (boardShp ?? tierShape(tier)) : tierShape(tier)}
             // The cake's own footprint is what a board decoration must not stand in.
             hole={isBoard ? tierShape(bottomTier) : null}
+            body={solidBody}
             selected={isSelected}
             onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
             onLongPress={onStickerLongPress}
@@ -5464,6 +5638,19 @@ function CakeContent({ config, scene, edit = null }) {
 // capture without it reads as a cake floating in mid-air — and board-level finishes (a grass ring,
 // letter blocks at the foot) had nothing to stand on. Only the ROOM is left out: the floor plane and
 // the studio background belong to the editor, not to the cake.
+/* ── Which canvas a boundary belongs to ──────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE SAME DECORATION MOUNTS TWICE, IN TWO SEPARATE REACT ROOTS. The live canvas draws the cake
+ * and a 400x400 canvas parked off-screen at -9999 draws it again for thumbnail capture — each
+ * `<Canvas>` is its own R3F root — so every asset has TWO Suspense boundaries and the page spinner
+ * counts both. Measured on a real template 2026-10-29: six boundaries for three assets, five
+ * released in 0.6s, and one held for SIXTY-TWO SECONDS after every byte had arrived, with no
+ * network event releasing it — it cleared when the tab was switched, i.e. on a re-render.
+ *
+ * The probe could name the ASSET but not the ROOT, and the root is the question. This says which.
+ */
+const SceneKindContext = createContext('live');
+
 function CakeThumbnailScene({ config, shadows = false, lights = null }) {
   return (
     <>
@@ -5481,7 +5668,10 @@ function CakeThumbnailScene({ config, shadows = false, lights = null }) {
           `apartment` fallback so the wall isn't left IBL-less (brown) on local dev. IBL only —
           no `background` prop — so the capture stays transparent. */}
       <SceneEnv />
-      <CakeContent config={config} scene={resolveCakeScene(config)} />
+      {/* Everything below is the capture root, not the live one — see SceneKindContext. */}
+      <SceneKindContext.Provider value="thumb">
+        <CakeContent config={config} scene={resolveCakeScene(config)} />
+      </SceneKindContext.Provider>
     </>
   );
 }
@@ -5731,6 +5921,242 @@ function TakeGrid({ strength, active = true }) {
  * cake halfway through the shot. Taking the camera's horizontal bearing and putting the wall on the
  * opposite side makes it a backdrop by construction, at every angle, with no special cases.
  */
+/* ── A backdrop board standing where the wall grid stands ────────────────────────────────────────
+ *
+ * Sandeep, 2026-10-28: *"cake should still look like its on the same horizontal plane as it is now.
+ * only the place where vertical grid lines are placed, that should be replaced with image. so the
+ * image stands there."*
+ *
+ * ⚠️ THIS IS NOT A BACKGROUND, AND THAT DISTINCTION IS THE WHOLE FEATURE. The first attempt put the
+ * picture on `scene.background`, which is drawn across the viewport and is not IN the world: the
+ * cake then hangs in front of a photograph with nothing under it — *"cake looks like floating and
+ * not matching with the ambiance in image"*. A board standing in the scene has a base, and that
+ * base is at y = 0, which is the floor the cake already stands on. Nothing about the cake's ground,
+ * its shadow or its horizon changes; the board simply occupies the place the wall grid occupied.
+ *
+ * ⚠️ IT TURNS WITH THE CAMERA, exactly as `TakeGridWall` does and for the same reason — so it is
+ * always behind the cake and never edge-on, and the orbit can never catch its side. That also
+ * disposes of the sticker problem a flat background had: the board faces you at every angle, so a
+ * photograph taken straight-on reads straight-on from everywhere.
+ *
+ * ⚠️ `meshBasicMaterial`, SO IT CANNOT TOUCH THE CAKE. Unlit, like the grid lines it replaces: it
+ * takes no light, casts no shadow and bounces nothing. The cake renders exactly as the baker
+ * approved it — the contract at the top of this file, kept by construction rather than by care.
+ *
+ * ⚠️ AND IT IS THE GRID'S OWN GEOMETRY, not a size invented here. `WALL.width`/`height`/`distance`
+ * are what the lines already use, so the board lands where a baker has already seen lines land, and
+ * a change to one moves the other.
+ */
+/* Scratch vector for the camera's facing — allocated once, not per frame. */
+const FACING = new THREE.Vector3();
+
+/** Loads a backdrop just to ask what colour it ends on. See `studioBackdrop.js`. */
+function useBackdropFloor(image) {
+  const [hex, setHex] = useState(null);
+  useEffect(() => {
+    if (!image) { setHex(null); return undefined; }
+    let live = true;
+    const img = new Image();
+    /* ⚠️ `crossOrigin` AND `corsUrl` TOGETHER, NEVER ONE OF THEM. The header alone is not enough:
+       a plain <img> elsewhere on the page can have already cached this url WITHOUT the CORS header,
+       and the browser then serves that entry to this request too — the image loads, the canvas is
+       tainted, `getImageData` throws, and the floor silently falls back to grey. `corsUrl` makes it
+       a different cache entry. See `assetUrl.js`; `check:cors` caught exactly this. */
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (!live) return;
+      setHex(baseColourOf(img, (w, h) => {
+        const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
+      }));
+    };
+    img.onerror = () => { if (live) setHex(null); };
+    img.src = corsUrl(image);
+    return () => { live = false; };
+  }, [image]);
+  return hex;
+}
+
+export function StudioWall({ image, dim = 0, far = 1 }) {
+  const camera = useThree(s => s.camera);
+  const group = useRef(null);
+  const [tex, setTex] = useState(null);
+  const aspectRef = useRef(1);     // the picture's own shape, read by the frame loop above
+
+  useEffect(() => {
+    if (!image) { setTex(null); return undefined; }
+    let live = true, loaded = null;
+    new THREE.TextureLoader().load(image, (t) => {
+      if (!live) { t.dispose(); return; }
+      t.colorSpace = THREE.SRGBColorSpace;
+      loaded = t;
+      aspectRef.current = (t.image?.width ?? 1) / (t.image?.height ?? 1);
+      setTex(t);
+    });
+    return () => { live = false; setTex(null); if (loaded) loaded.dispose(); };
+  }, [image]);
+
+  const board = useRef(null);
+  useFrame(() => {
+    const g = group.current;
+    if (!g || !camera) return;
+    /* ── How far back the wall stands ───────────────────────────────────────────────────────────
+     *
+     * ⚠️ THE GRID'S DISTANCE IS NOT A ROOM'S DISTANCE. Sandeep, seeing a panelled wall at the grid's
+     * own 5 units: *"the background wall is too close."* The lines are a drawing aid and belong just
+     * behind the cake, where they can measure it; a wall is a wall, and there is floor between a
+     * cake and the back of a bakery. Pushing the board back does NOT shrink the picture — it is
+     * sized to cover the frame from wherever it stands — so the wall stays the same size while the
+     * floor between the cake and it grows, and that gap is what reads as depth. */
+    const stand = WALL.distance * Math.max(1, far);
+    const bearing = Math.atan2(camera.position.x, camera.position.z);
+    g.position.set(-Math.sin(bearing) * stand, 0, -Math.cos(bearing) * stand);
+
+    /* ── It faces the lens, and it pivots on its own base to do it ───────────────────────────────
+     *
+     * ⚠️ A BOARD LEFT BOLT UPRIGHT FANS OUT, AND IT READS AS A TENT. The designer's camera looks
+     * DOWN at the cake, and a vertical plane seen by a pitched camera keystones: the panel lines in
+     * a wall photograph splay outward towards the top of the frame, hard, because the board has to
+     * span a 42° lens. It is what a real camera does to a real wall — and it is wrong here anyway,
+     * because this is not a wall being photographed, it is a backdrop standing behind the subject,
+     * and a photographer's backdrop faces the lens. Squared up, the panels are panels.
+     *
+     * ⚠️ PIVOTED AT THE BASE, WHICH IS THE WHOLE TRICK. The tilt is applied at the group's origin,
+     * and the origin is on the floor — so the board leans back from a base line that never leaves
+     * y = 0. That keeps Sandeep's requirement intact (*"cake should still look like its on the same
+     * horizontal plane as it is now… so the image stands there"*) while removing the fan. Nothing
+     * else in the scene can tell it leans: it is unlit, casts nothing, and is behind everything. */
+    /* ⚠️ `asin(dir.y)`, NOT `asin(-dir.y)`, AND THE SIGN WAS WRONG FIRST TIME. A positive rotation
+       about +X carries the plane's +Z normal towards -Y — it tilts the board's face DOWNWARD, which
+       ADDS to the camera's own pitch instead of cancelling it. The first render came back a
+       sunburst, twice the fan it started with. The camera looks down, so `dir.y` is negative, and
+       the board has to lean its top TOWARDS the lens by that same angle. */
+    const dir = camera.getWorldDirection(FACING);
+    g.rotation.set(wallTilt(dir.y), bearing, 0, 'YXZ');
+
+    /* ── Big enough to cover the view, from wherever the camera happens to be ──────────────────
+     *
+     * ⚠️ A FIXED SIZE CANNOT WORK, AND GUESSING ONE PUT THE EDGES IN SHOT. The board stands at
+     * `WALL.distance` from the CENTRE, but the camera is further away again — about 12 units, not
+     * 5 — and the view widens with distance. A 9-unit board sized for the nearer figure left its
+     * left and right edges visible in the frame, which is the one thing a backdrop may never do.
+     * So it is measured instead: how much the lens sees AT the board, every frame, which also
+     * means zooming or orbiting can never expose an edge.
+     *
+     * ⚠️ AND IT KEEPS THE PICTURE'S OWN SHAPE. Cover, never stretch: whichever of width or height
+     * falls short decides the scale and the other overflows out of frame. A squashed bakery is
+     * worse than a cropped one. */
+    const m = board.current;
+    if (!m) return;
+    const d = camera.position.distanceTo(g.position);
+    const visH = 2 * d * Math.tan((camera.fov * Math.PI) / 360);
+    const visW = visH * camera.aspect;
+    const h = Math.max(visH, visW / Math.max(0.01, aspectRef.current));
+    const w = h * aspectRef.current;
+    m.scale.set(w, h, 1);
+    /* Base on the floor — half its height up, because a plane is built about its centre. That is
+       what puts the image in the room instead of in front of it. */
+    m.position.set(0, h / 2, 0);
+  });
+
+  if (!tex) return null;
+  return (
+    <group ref={group}>
+      {/* A unit plane; the frame-covering size and the base-on-the-floor lift are both set each
+          frame above, because both depend on where the camera is. */}
+      <mesh ref={board} renderOrder={-1}>
+        <planeGeometry args={[1, 1]} />
+        {/* `color` dims it by multiplication — one texture serves every strength, and a sharp
+            photograph can be pushed back so the cake wins the picture. */}
+        <meshBasicMaterial map={tex} toneMapped={false} depthWrite={false}
+                           color={new THREE.Color().setScalar(1 - Math.min(0.9, Math.max(0, dim)))} />
+      </mesh>
+    </group>
+  );
+}
+
+
+/* ── The bakery's name on the studio wall ────────────────────────────────────────────────────────
+ *
+ * Sandeep, 2026-10-29: *"i want the baker name to appear on the wall."* It stands where the wall
+ * grid stands and shares its geometry exactly, so the name is on the same plane as the lines and
+ * moves with them.
+ *
+ * ⚠️ EDITING ONLY, NEVER WHILE FILMING, and that is not a style choice. What a reel may carry is
+ * the `reel_branding` ENTITLEMENT, resolved in `reelCaption.js`: a baker without it gets our mark,
+ * one with it chooses, and *"a UI is not an entitlement check."* A name painted into the scene
+ * would walk straight past that and burn the bakery's name into every take. The FRONT marker is
+ * excluded from takes for the same class of reason — it *"was being burned into finished reels,
+ * where it reads as a stray watermark nobody can explain."*
+ *
+ * ⚠️ IT IS A PAINTED TEXTURE, NOT 3D TEXT, so it can use the baker's OWN face. See `studioSign.js`.
+ *
+ * ⚠️ AND IT WAITS FOR THE FONT BEFORE PAINTING. `document.fonts.load` has to resolve first or the
+ * browser quietly falls back down the CSS stack — Pacifico renders as some default cursive, the
+ * sign is wrong, and nothing anywhere errors. The repaint on `document.fonts.ready` covers the case
+ * where the face arrives after the first paint.
+ */
+function StudioWallSign({ name, cssFamily, colour = GRID_COLOR, strength, active = true }) {
+  const camera = useThree(s => s.camera);
+  const group = useRef(null);
+  const [sign, setSign] = useState(null);
+
+  useEffect(() => {
+    if (!name || typeof document === 'undefined') { setSign(null); return undefined; }
+    let live = true, made = null;
+    const paint = () => {
+      if (!live) return;
+      const out = paintSign({
+        name, cssFamily, colour, wallWidth: WALL.width,
+        makeCanvas: (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; },
+      });
+      if (!out || !live) return;
+      const tex = new THREE.CanvasTexture(out.canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      if (made) made.dispose();
+      made = tex;
+      setSign({ tex, width: out.width, height: out.height });
+    };
+    /* The size in the spec matters to the loader, so it is the size the sign is painted at. */
+    document.fonts?.load?.(signFontSpec(cssFamily, 160))?.then(paint, paint) ?? paint();
+    document.fonts?.ready?.then(paint);
+    return () => { live = false; if (made) made.dispose(); setSign(null); };
+  }, [name, cssFamily, colour]);
+
+  useFrame(() => {
+    const g = group.current;
+    if (!g || !camera) return;
+    /* The grid wall's own placement, to the letter — same distance, same bearing, same upright
+       plane. Anything else and the name would drift off the lines it is painted on. */
+    const bearing = Math.atan2(camera.position.x, camera.position.z);
+    g.position.set(-Math.sin(bearing) * WALL.distance, 0, -Math.cos(bearing) * WALL.distance);
+    g.rotation.set(0, bearing, 0);
+  });
+
+  if (!sign) return null;
+  /* ⚠️ MOST OF THE WALL IS NEVER IN SHOT, AND PUTTING THE SIGN HALFWAY UP IT LOST THE SIGN. `WALL`
+     is 6 units tall, so "high on the wall" sounds like 3.9 — and the first render came back with no
+     name anywhere, because the frame's top edge crosses the wall at y ≈ 2.95. Projected from the
+     designer's own resting camera (0, 5.721, 6.188) aiming at (0, 1.403, 0) on a 42° lens, the wall
+     is visible from its base at 32% down the frame up to y = 2.95 at the very top. 1.9 put the
+     name's TOP through the ceiling — the projection locates the sign's centre, and the lettering
+     has height of its own — so it sits lower, with its whole box inside the band and still clear
+     above a two-tier cake at every bearing. */
+  const SIGN_Y = 1.45;
+  return (
+    <group ref={group}>
+      <mesh position={[0, SIGN_Y, 0]} renderOrder={-1}>
+        <planeGeometry args={[sign.width, sign.height]} />
+        {/* Unlit and never depth-writing, exactly like the lines it sits among: it takes no light,
+            casts nothing, and cannot touch the cake. Its opacity rides the baker's own line
+            strength so turning the lines down turns the name down with them. */}
+        <meshBasicMaterial map={sign.tex} transparent toneMapped={false} depthWrite={false}
+                           opacity={active ? Math.min(1, wallOpacity(strength) * 3.2) : 0} />
+      </mesh>
+    </group>
+  );
+}
+
 function TakeGridWall({ strength, active = true }) {
   const camera = useThree(s => s.camera);
   const group = useRef(null);
@@ -6321,6 +6747,16 @@ export default function CakeCanvas({
   filmBackdrop = 'flat',
   filmBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
   backdropActive = true,
+  /* The baker's own room while editing — see CakeScene's note on why this is not filmGround. */
+  studioGround = null,
+  studioBackdrop = 'flat',
+  studioBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
+  /* POC: a picture behind the cake instead of a colour. See SceneBackground. */
+  studioImage = null,
+  studioImageDim = 0,
+  studioImageFar = 1,
+  studioSignName = '',
+  studioSignFont = 'sans-serif',
   filmCutout = false,
   filmTight = false,
   cameraPosition = CAMERA_POSITION,
@@ -6451,6 +6887,14 @@ export default function CakeCanvas({
         filmGround={filmGround}
         filmBackdrop={filmBackdrop}
         filmBackdropStrength={filmBackdropStrength}
+        studioGround={studioGround}
+        studioBackdrop={studioBackdrop}
+        studioBackdropStrength={studioBackdropStrength}
+        studioImage={studioImage}
+        studioImageDim={studioImageDim}
+        studioImageFar={studioImageFar}
+        studioSignName={studioSignName}
+        studioSignFont={studioSignFont}
         backdropActive={backdropActive}
         filmCutout={filmCutout}
         filmTight={filmTight}
@@ -6600,8 +7044,21 @@ export default function CakeCanvas({
       {/* Scenery for the take only — null on every other path, including a capture. */}
       {/* `takeLensActive` points the fade exactly as it points the lens: the room assembles while
           the camera settles into it, and dissolves while the camera leaves. */}
-      {takeGrid && <TakeGrid strength={takeGridStrength} active={takeLensActive} />}
-      {takeGridWall && <TakeGridWall strength={takeGridStrength} active={takeLensActive} />}
+      {/* ⚠️ A GRID THAT IS NOT PART OF A TAKE IS SIMPLY ON. `takeLensActive` points the fade at the
+          lens, and outside a take there is no lens, so it is false — which would fade a baker's own
+          studio grid straight back out the moment it appeared. The fade belongs to the take; the
+          room does not. */}
+      {takeGrid && <TakeGrid strength={takeGridStrength} active={takeLens != null ? takeLensActive : true} />}
+      {/* The board REPLACES the lines rather than standing with them — lines drawn over a
+          photograph read as a mistake, and both occupy the same plane. */}
+      {studioImage
+        ? <StudioWall image={studioImage} dim={studioImageDim} far={studioImageFar} />
+        : (takeGridWall && <TakeGridWall strength={takeGridStrength} active={takeLens != null ? takeLensActive : true} />)}
+      {/* The name rides with the wall grid and is kept out of every take — see StudioWallSign. */}
+      {!studioImage && takeGridWall && !filmGround && (
+        <StudioWallSign name={studioSignName} cssFamily={studioSignFont} strength={takeGridStrength}
+                        active={takeLens != null ? takeLensActive : true} />
+      )}
       {onTakeFrame && <TakeFramePump onFrame={onTakeFrame} />}
       {takeLens != null && (
         <TakeLens fov={takeLens} active={takeLensActive} onReturned={onTakeLensReturned} />

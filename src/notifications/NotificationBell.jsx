@@ -23,7 +23,10 @@ import { useNarrow } from '../shared/useNarrow.js';
 // push already handles the urgent case, and a poll cannot leave a stale count when a socket drops.
 const POLL_MS = 60_000;
 
-export default function NotificationBell({ apiClient, onOpenLink }) {
+/* `colour` — the studio can take the band out from behind this icon, and then the icon has to ink
+   itself against whatever ground the baker chose. Absent, it is exactly the chrome green it has
+   always been. See `studioInk`. */
+export default function NotificationBell({ apiClient, onOpenLink, colour }) {
   const [unread, setUnread] = useState(0);
   const [items, setItems]   = useState(null);   // null = never loaded
   const [open, setOpen]     = useState(false);
@@ -70,7 +73,13 @@ export default function NotificationBell({ apiClient, onOpenLink }) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <button type="button" style={s.bell} onClick={() => { setOpen(o => !o); if (!items) load(); }}
+      {/* ⚠️ THE COLOUR IS APPLIED HERE, NOT IN `s`. `s` is a module-level constant and cannot see a
+          prop — putting `colour` in it threw `ReferenceError: colour is not defined` on every page
+          that mounts a bell, and `check:bindings` could not see it because the name IS declared in
+          this file, just in another scope. The gate is crude there by design; the render site is
+          where a prop belongs anyway. */}
+      <button type="button" style={colour ? { ...s.bell, color: colour } : s.bell}
+              onClick={() => { setOpen(o => !o); if (!items) load(); }}
               aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}>
         <BellGlyph />
         {/* The count caps at 9+. A two-digit badge on a small chip is unreadable, and the exact

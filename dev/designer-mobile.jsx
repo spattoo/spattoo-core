@@ -1111,6 +1111,8 @@ if (PARAMS.has('bow')) {
     placement_config: { r: 4, scale: { max: 9, min: 1.6, step: 0.5 }, material: 'satin',
       // ?freehand=1 — the row switches on the move gizmo and the seating rules stand down
       ...(PARAMS.has('freehand') ? { free_hand: true } : {}),
+      // ?pierces=1 — and the row declares it may go INTO the cake, so the solid stop stands down
+      ...(PARAMS.has('pierces') ? { pierces: true } : {}),
       metalness: 0, roughness: 0.4,
       rim: 'verge', side: { mode: 'hug', seat: 'proud' },
       // The row as it is in the catalogue today. `seat: 'hang'` is what this change adds; flip it
@@ -1415,6 +1417,23 @@ const STUBS = {
   /* Counted so a test can prove the Decorations panel's refresh actually RE-FETCHES, rather than
      inferring it from the button having been clicked. The stub returns the same rows either way;
      what is being asserted is that the request happened at all. */
+  /* ── The baker's own studio ────────────────────────────────────────────────────────────────────
+     `?studio=` takes a ground hex (without the #) and dresses the editing room with it:
+     `?studio=2b2b2b&grid=1&wall=1&look=pool`. Absent, the host serves NO look at all — which is
+     also what a customer session and every other harness do, and is the state that must leave the
+     editing room exactly as it was. The setter stores it on window so a run can assert the save
+     happened rather than inferring it from the UI not erroring. */
+  ...(PARAMS.has('studio') ? {
+    fetchStudioLook: async () => ({ look: {
+      ground: `#${PARAMS.get('studio')}`,
+      backdrop: PARAMS.get('look') ?? 'pool',
+      backdropStrength: Number(PARAMS.get('depth') ?? 0.55),
+      grid: PARAMS.has('grid'),
+      gridWall: PARAMS.has('wall'),
+      gridStrength: Number(PARAMS.get('lines') ?? 0.45),
+    } }),
+    setStudioLook: async (look) => { window.__studioSaved = look; return { look }; },
+  } : {}),
   fetchElements:       async () => ((window.__elementFetches = (window.__elementFetches ?? 0) + 1),
                         PARAMS.has('writing') ? [{
     id: 'writing-el-1', name: 'Texts',
@@ -1694,11 +1713,27 @@ if (LIBRARY) Object.assign(STUBS, {
   fetchTemplate: async (id) => {
     const t = LIB_ROWS.find(r => r.id === id);
     if (!t || t.type === 'photo') return null;
+    /* ⚠️ EACH TEMPLATE CARRIES A GLB, because a design of bare tiers loads nothing and measures
+       nothing. Loading one template after another is the reported slowdown, and what a load
+       actually costs is the MODELS it brings — `retainedGlb.js` measured one textured topper at
+       16.3 MB of texture. A fixture whose templates are plain cream would report a flat line and
+       call the bug absent. Each gets its own `elementId` so they are different pieces, but the
+       same GLB url, which is the common case: a catalogue of cakes drawn from one element set. */
     return { ...t, design: {
       tiers: Array.from({ length: t.tier_count ?? 1 }, () => ({
         color: t.thumbnail_url.includes('cfe3d4') ? '#CFE3D4' : '#F1EEDC',
         shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth',
       })),
+      stickers: [{
+        id: `sk-${t.id}`, elementId: 'e9', name: t.name,
+        /* ⚠️ A DISTINCT URL PER TEMPLATE, and that is the whole point of the fixture. `retainedGlb`
+           keys its cache by URL, so eight templates sharing one model reuse one entry and measure
+           a flat line — which is what the first run of this showed and why it looked like there
+           was no bug. A real catalogue is eight DIFFERENT cakes with different pieces. Same file,
+           different query, so each is a separate entry without needing eight real models. */
+        imageUrl: `/sample-rosette.glb?tpl=${t.id}`,
+        zone: 'top_surface', tierIndex: 0, x: 0, z: 0, scale: 1,
+      }],
     } };
   },
   fetchTemplates:      async () => LIB_ROWS.filter(t => t.offered).map(t => ({ ...t })),
@@ -1939,6 +1974,39 @@ const rimRosesDesign = PARAMS.has('rimroses') ? {
   }),
 } : null;
 
+
+/* ── `?race=N` — N decorations, N DISTINCT assets, all fetched at once ──────────────────────────
+ *
+ * ⚠️ EVERY OTHER FIXTURE HERE SHARES ONE URL, AND THAT IS WHY NONE OF THEM COULD REPRODUCE THIS.
+ * `?rimroses` places five roses and issues ONE request: same `imageUrl`, so one fetch, one Suspense
+ * boundary's worth of work. The fault Sandeep hit on 2026-10-29 — a cake fully drawn with the
+ * spinner still counting, cleared instantly by resizing the window — came from a template with SIX
+ * DISTINCT assets in flight. Measured on the harness first: five roses, 2 requests, spinner cleared
+ * 0.9s after the last byte at both widths. The fixture could not lose the race because there was no
+ * race.
+ *
+ * So this one gives each decoration its own URL — one file, N query strings. `useGLTF` keys its
+ * cache on the url STRING, so `?race=1` and `?race=2` are two assets as far as Suspense is
+ * concerned while costing one file on disk: identical work, distinct cache keys, N boundaries
+ * resolving independently. (Eight copies of the same .glb was the first version; a query string
+ * does the same job without a megabyte of duplicates in the repo.) Pair it with a throttled route
+ * and the ordering is wide open.
+ */
+const RACE_N = PARAMS.has('race') ? Math.min(8, Math.max(1, Number(PARAMS.get('race')) || 6)) : 0;
+const raceDesign = RACE_N ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  stickers: Array.from({ length: RACE_N }, (_, k) => {
+    const a = (k / RACE_N) * 2 * Math.PI;
+    return {
+      id: `race${k}`, elementId: 'e9', name: `Race ${k + 1}`, imageUrl: `/sample-rosette-3d.glb?race=${k + 1}`,
+      zone: 'top_surface', tierIndex: 0,
+      x: 1.02 * Math.sin(a), z: 1.02 * Math.cos(a), y: 0, scale: 3.2,
+      size: 1, rotation: 0, color: '#c41c1c',
+      allowedActions: { move: true, color: true, delete: true, resize: true },
+    };
+  }),
+} : null;
+
 /* ── `?standing` — a decoration on the top surface in STAND mode ────────────────────────────────
  *
  * ⚠️ THIS EXISTS BECAUSE THE OTHER RETURN WENT UNTESTED. `DraggableTopSticker` has two of them:
@@ -2103,7 +2171,15 @@ const styledDesign = STYLE_KEY ? {
   }],
 } : null;
 
+/* ?bgimage=<file>&bgdim=0.3 — POC: a picture behind the cake instead of a colour. Drop a file in
+   dev/ and name it here. Orbit the cake: a wall or a wash reads as a paper sweep, a room with
+   perspective in it reads as a sticker. That difference is the whole point of looking. */
+const bgPoc = (PARAMS.has('bgimage') || PARAMS.has('sign'))
+  ? { image: PARAMS.has('bgimage') ? `/${PARAMS.get('bgimage')}` : null, dim: Number(PARAMS.get('bgdim') ?? 0),
+      far: Number(PARAMS.get('bgfar') ?? 1), sign: PARAMS.has('sign') ? (PARAMS.get('sign') || true) : false }
+  : null;
+
 createRoot(document.getElementById('root')).render(
-  <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? boardSandDesign ?? pipingDesign ?? standingDesign ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+  <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate} studioBackdropPoc={bgPoc}
+                initialDesign={raceDesign ?? reloadDesign ?? stripes2Design ?? rainbow2Design ?? boardSandDesign ?? pipingDesign ?? standingDesign ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

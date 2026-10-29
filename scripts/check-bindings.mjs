@@ -120,7 +120,17 @@ function declaredNames(src) {
   // Parameter lists — `(…) =>` and `(…) {` — which is where props and callbacks are bound.
   // One level of nesting allowed, because a default value is often a call: `fmt = v => v.toFixed(2)`
   // sits inside the very parameter list that declares `fmt`.
-  for (const m of src.matchAll(/\(((?:[^()]|\([^()]*\)){0,2000})\)\s*(?:=>|\{)/g)) add(m[1]);
+  /* ⚠️ THE LENGTH CAP IS A CLIFF, NOT A LIMIT, AND IT HAS TO CLEAR THE BIGGEST LIST IN THE REPO.
+     At 2000 it silently stopped matching `CakeCanvas`'s prop list — 5698 characters of props and
+     the comments between them — so EVERY name declared there read as undeclared, and the gate
+     reported `hitTestRef(…)` as a run-time ReferenceError in code that had not changed. Two props
+     added to that list is what tipped it over, so the failure arrived attached to an innocent edit
+     and pointed somewhere else entirely.
+     Measured 2026-10-28: the longest parameter lists in `src/` are 6712 and 5683 (both in
+     CakeCanvas.jsx), then 4541 (VerifyStep.jsx). 12000 leaves room for that file to keep growing,
+     which it does. The gate's own advice when it is wrong: "widen declaredNames, do not silence
+     the line." */
+  for (const m of src.matchAll(/\(((?:[^()]|\([^()]*\)){0,12000})\)\s*(?:=>|\{)/g)) add(m[1]);
   // A lone arrow parameter: `x => …`
   for (const m of src.matchAll(/(?:^|[^\w$.])([A-Za-z_$][\w$]*)\s*=>/g)) names.add(m[1]);
   // \`import{a,b}from"x"\` — minified whitespace means the spaces are gone.

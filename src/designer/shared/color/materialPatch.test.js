@@ -61,12 +61,9 @@ describe('three treatments, one material', () => {
      material on ONE program; gradientMaterial's own note records the cost — the program binds
      whichever material compiled FIRST and the rest render that one's colours. On a cake switched
      from the library that is the previous cake's wall on the new cake. */
-  it('never gives two materials the same program key, in any state', () => {
+  it('never gives two PATCHED materials the same program key', () => {
     const states = [
       (m) => applyGradient(m, GRAD, bbox()),
-      (m) => { applyGradient(m, GRAD, bbox()); applyGradient(m, null, bbox()); },
-      (m) => { applyGlaze(m, GLAZE, bbox()); applyGlaze(m, null, bbox()); },
-      (m) => { applyStripes(m, STRIPES, bbox()); applyStripes(m, null, bbox()); },
       (m) => { applyGradient(m, GRAD, bbox()); applyStripes(m, STRIPES, bbox()); },
     ];
     for (const put of states) {
@@ -75,6 +72,46 @@ describe('three treatments, one material', () => {
       expect(compiled(a).key).not.toBe(compiled(b).key);
       expect(compiled(a).key).toContain(a.uuid);
     }
+  });
+
+  /* ⚠️ AND THE OPPOSITE ONCE THE LAST PATCH GOES, which this used to forbid. The rule above was
+     written as "in ANY state, including torn down" — broader than the fault it guards. The fault is
+     a patch's uniform bag being held BY IDENTITY, so two PATCHED materials on one program render
+     the first one's colours. A material with no patch has no bag: nothing is injected, no defines
+     are set, the uniforms sit unused in `userData`, and it is a plain MeshStandardMaterial again.
+     Sharing one program across those is simply what three.js does for every ordinary material.
+     ⚠️ AND THE COST LANDED ON CAKES WITH NO GRADIENT AT ALL. `StickerModel` calls `applyGradient`
+     on every material of every 3D decoration regardless, so the inactive path ran constantly and
+     pinned each one. Measured on "Animal theme", which uses no gradient: 27 programs, 22 used
+     once, 13 byte-identical apart from `spat:<uuid>:none`. Returning them to three.js gives 27 →
+     14 programs and a load that settles in 4.2s instead of 11.1s (median of 3, same machine),
+     render pixel-identical. */
+  it('puts UNPATCHED materials back on one shared program', () => {
+    const states = [
+      (m) => { applyGradient(m, GRAD, bbox()); applyGradient(m, null, bbox()); },
+      (m) => { applyGlaze(m, GLAZE, bbox()); applyGlaze(m, null, bbox()); },
+      (m) => { applyStripes(m, STRIPES, bbox()); applyStripes(m, null, bbox()); },
+      (m) => applyGradient(m, null, bbox()),
+    ];
+    for (const put of states) {
+      const a = new THREE.MeshStandardMaterial(); const b = new THREE.MeshStandardMaterial();
+      put(a); put(b);
+      expect(compiled(a).key).toBe(compiled(b).key);
+      expect(compiled(a).key).not.toContain(a.uuid);
+      // And a material that never met a patch keys the same way, so the two cannot drift apart.
+      expect(compiled(a).key).toBe(compiled(new THREE.MeshStandardMaterial()).key);
+    }
+  });
+
+  /* A patch arriving AFTER a teardown must reinstall both fields, or the second gradient paints
+     nothing — the teardown deletes them rather than leaving an inert pair. */
+  it('re-pins a material that is patched again later', () => {
+    const m = new THREE.MeshStandardMaterial();
+    applyGradient(m, GRAD, bbox());
+    applyGradient(m, null, bbox());
+    applyGradient(m, GRAD, bbox());
+    expect(compiled(m).gradient).toBe(true);
+    expect(compiled(m).key).toContain(m.uuid);
   });
 
   /* Paint order is the contract the three modules used to keep between them by accident. */
