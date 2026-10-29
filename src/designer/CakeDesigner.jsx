@@ -4718,7 +4718,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const logoSrc = useTrimmedLogo(bakerData?.logo_url);
   // What this header draws — the mark, the name, or both. One accessor for both headers and for the
   // settings control, so they cannot disagree about what a stored choice means.
-  const brandParts = headerBrandParts(bakerData, !!logoSrc);
+  /* POC flags, read here because the HEADER needs them and the header is drawn before the canvas
+     is configured further down. `sign=only` is the "wall carries it instead" variant. */
+  const studioWallSign = studioBackdropPoc?.sign ?? false;
+  const studioWallSignOnly = studioWallSign === 'only';
+  const brandPartsStored = headerBrandParts(bakerData, !!logoSrc);
+  /* ⚠️ POC: THE WALL CAN CARRY THE NAME INSTEAD OF THE HEADER. Sandeep, on seeing it in both at
+     once: *"let it appear twice for now on the harness... if good, then we can remove it on the top
+     right."* `?sign=only` is that second look. The logo is untouched — this swaps where the NAME is
+     set, and a baker who has chosen "Logo only" never had a header name to lose. */
+  const brandParts = studioWallSignOnly
+    ? { ...brandPartsStored, name: false }
+    : brandPartsStored;
   // The bakery's name is the one piece of type in the app that belongs to the baker, so the face is
   // theirs too. One reader, shared with the settings preview and the storefront.
   const brandFont  = brandFontCss(bakerData);
@@ -5038,7 +5049,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const studioBackdropImage = studioBackdropPoc?.image ?? null;
   const studioBackdropDim = studioBackdropPoc?.dim ?? 0;
   const studioBackdropFar = studioBackdropPoc?.far ?? 1;
-  const studioWallSign = studioBackdropPoc?.sign ?? false;
   const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
@@ -18420,8 +18430,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
            chrome's ground is one chance, and the studio starts where the rule says it starts.
 
            Absent for a baker who has chosen nothing, so nothing moves for anyone who has not. */
+        /* ⚠️ POC: THE BAND GOES WHEN THE WALL CARRIES THE NAME. Sandeep: *"above the wall, there is
+           white line break area where there is baker name originally. can we extend the wall till
+           there, lets not have that white area at all."* The band is painted OVER the top of the
+           canvas, so dropping its colour does not move anything — it uncovers the studio that was
+           always behind it, and the wall simply reaches the top of the page.
+           ⚠️ AND IT TAKES THE RULE WITH IT. A 1px line ruled across a bakery wall reads as a fault,
+           not as chrome; the whole point of removing the band is that there is no longer an edge
+           there. What stays in the row is the bell and the credits pill, which is also the reason
+           this is safe to try: the NAME was the thing that needed a ground to sit on, and it has
+           moved onto the wall. On a DARK studio ground the remaining two still have the contrast
+           problem the band was introduced to solve — see the note above. */
         <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0),
-                      ...(studioRoom.ground ? { background: DESIGNER_WALL } : {}) }} />
+                      ...(studioWallSign ? { borderBottom: 'none' }
+                          : studioRoom.ground ? { background: DESIGNER_WALL } : {}) }} />
       )}
 
       {/* ⚠️ THE DESKTOP BRAND MOVED TO THE RIGHT-HAND CLUSTER — see `creditsFloat` below. It used to

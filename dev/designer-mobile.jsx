@@ -2143,7 +2143,7 @@ const styledDesign = STYLE_KEY ? {
    perspective in it reads as a sticker. That difference is the whole point of looking. */
 const bgPoc = (PARAMS.has('bgimage') || PARAMS.has('sign'))
   ? { image: PARAMS.has('bgimage') ? `/${PARAMS.get('bgimage')}` : null, dim: Number(PARAMS.get('bgdim') ?? 0),
-      far: Number(PARAMS.get('bgfar') ?? 1), sign: PARAMS.has('sign') }
+      far: Number(PARAMS.get('bgfar') ?? 1), sign: PARAMS.has('sign') ? (PARAMS.get('sign') || true) : false }
   : null;
 
 createRoot(document.getElementById('root')).render(
