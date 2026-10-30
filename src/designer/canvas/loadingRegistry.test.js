@@ -175,3 +175,67 @@ describe('waiting for the capture canvas', () => {
     expect(SRC_FN).toMatch(/zeros\s*>=\s*settle/);
   });
 });
+
+/* ── Retrying a boundary the asset already arrived for ───────────────────────────────────────────
+ *
+ * A Suspense boundary inside the <Canvas> lives in R3F's own React root, and a resolved asset does
+ * not reliably give that root work to do. The boundary then keeps showing its fallback after every
+ * byte has arrived: the decoration is never drawn, the scene stays unlit, and the spinner stays up
+ * until something unrelated re-renders the tree.
+ *
+ * ⚠️ THIS WAS SEEN TWICE IN PRODUCTION AND FIXED ONLY ON THE HALF NOBODY WATCHES. The notes in
+ * loadingRegistry.js and beside SceneKindContext both record it — "one held for SIXTY-TWO SECONDS
+ * after every byte had arrived... it cleared when the tab was switched, i.e. on a re-render" — and
+ * both times it was read as the CAPTURE root's problem. The capture half got `channel`; the live
+ * half, which is the one a baker waits on, was left.
+ *
+ * Measured on the production build via `npm run measure:template`, a fresh browser each time:
+ * 4 of 5 cold loads never settled before, 0 of 8 after.
+ */
+describe('a boundary whose asset has already arrived', () => {
+  const FLUSH = 'useFlush' + 'PendingBoundaries';
+  const HOOK = SRC.slice(SRC.indexOf(`export function ${FLUSH}`));
+
+  it('has a flush for the LIVE root, not only the capture one', () => {
+    expect(SRC).toContain(`export function ${FLUSH}`);
+  });
+
+  /* It must do nothing at all when nothing is pending — this runs on every cake, and a timer that
+     ticks on an idle canvas is a cost with no symptom to justify it. */
+  it('does nothing while nothing is loading', () => {
+    expect(HOOK).toMatch(/if\s*\(\s*!\s*loading\s*\)\s*return/);
+  });
+
+  /* ⚠️ A GRACE, SO THE PATH THAT ALREADY WORKS PAYS NOTHING. An asset that resolves quickly is done
+     long before the first tick, so a normal load never re-renders for this at all. */
+  it('waits before it starts nudging', () => {
+    expect(HOOK).toMatch(/setTimeout/);
+    expect(SRC).toMatch(/FLUSH_GRACE_MS\s*=\s*\d+/);
+  });
+
+  /* ⚠️ AND IT CLEARS BOTH TIMERS. The grace timer and the interval are separate handles, and
+     leaking either keeps re-rendering a canvas that finished loading. */
+  it('stops when the loading stops', () => {
+    expect(HOOK).toContain('clearTimeout');
+    expect(HOOK).toContain('clearInterval');
+  });
+
+  /* ⚠️ CALLED FROM CakeCanvas, WHICH IS THE WHOLE POINT. React re-attempts a suspended boundary
+     when an ANCESTOR renders — a fallback re-rendering itself does not retry its own boundary, and
+     a wrapper that re-renders `{children}` is bailed out of when the child elements are
+     referentially unchanged. It has to be the component whose JSX creates those elements. A hook
+     that exists and is never called is exactly the shape this bug already took once. */
+  it('is actually called by the live canvas', () => {
+    const CANVAS = readFileSync(new URL('./CakeCanvas.jsx', import.meta.url), 'utf8');
+    /* ⚠️ A LIVE CALL, NOT THE TEXT OF ONE. The first version of this asserted `toContain` on the
+       call, and commenting the call out passed it — `// useFlushPendingBoundaries();` contains the
+       string just as happily. A test that a one-character edit defeats is the same shape as the
+       bug it guards, which went unfixed for two sightings because the evidence was never asked to
+       be real. So: at least one line that calls it and is not commented out. */
+    const live = CANVAS.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.includes(`${FLUSH}()`) && !l.startsWith('//') && !l.startsWith('*') && !l.startsWith('/*'));
+    expect(live.length).toBeGreaterThan(0);
+    expect(CANVAS).toMatch(new RegExp(`import\\s*\\{[^}]*${FLUSH}[^}]*\\}\\s*from\\s*'\\./loadingRegistry\\.js'`));
+  });
+});

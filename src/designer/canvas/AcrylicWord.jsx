@@ -7,6 +7,28 @@ import { FONDANT_WRITING_COLOR } from '../constants.js';
 import { albedoForLight } from '../shared/albedoForLight.js';
 import { arcLetter } from '../geometry/textPath.js';
 
+/* ── Edible lustre dust, brushed onto the paste ──────────────────────────────────────────────────
+ *
+ * ⚠️ A TABLE, BECAUSE A FINISH IS A SET OF NUMBERS THAT MOVE TOGETHER. Applied over the fondant
+ * material rather than replacing it, so the grain normal map and the roughness this letter shares
+ * with every other fondant on the cake survive — lustre is a treatment ON paste, not a different
+ * substance. Cream's `metallicCreamProps` is the same idea for icing; this is deliberately not that
+ * function, because calling it would build a whole new material and drop the grain.
+ *
+ * ⚠️ `sheenColor` IS NAMED, NOT ASSUMED. three.js defaults it to BLACK, so a sheen without one is a
+ * lobe that adds no light — `check:sheen-colour` exists because two surfaces had already paid for
+ * that, and it caught this one too. */
+const LUSTRE_SHEEN_COLOR = '#ffffff';
+const LUSTRE_FINISH = Object.freeze({
+  metalness: 0.45,
+  roughness: 0.34,            // still well short of acrylic's mirror; dust scatters
+  sheen: 0.5,
+  sheenRoughness: 0.5,
+  sheenColor: new THREE.Color(LUSTRE_SHEEN_COLOR),
+  clearcoat: 0.25,
+  clearcoatRoughness: 0.3,
+});
+
 /* ⚠️ MEASURED FOR FONDANT LETTERING, and it is NOT inherited from anything. `buildSolidWallMaterial`
  * takes its colour raw — correct for a relief cut-out's side walls, which were calibrated as part of
  * the print's own exposure model — but a letter standing in the open on a cake wall is a different
@@ -74,6 +96,9 @@ export default function AcrylicWord({
      perspex topper is cut from one sheet in one piece and cannot follow a curve at all. Sandeep:
      *"acrylic wont bend like arch. so we dont need acrylic bend."* */
   arc = null,
+  /* Edible lustre dust brushed onto the paste — fondant's answer to cream's Metallic toggle, and
+     deliberately not acrylic's mirror finish. See the material below. */
+  lustre = false,
   onRise,
 }) {
   const arcR = arc?.radius ?? 0;
@@ -175,7 +200,7 @@ export default function AcrylicWord({
 
   /* ⚠️ ONLY THE ARC'd WORD. The card renders a row of FONT PREVIEWS, each its own AcrylicWord,
      so an unfiltered probe reports whichever rendered last — a preview, not the cake. */
-  if (import.meta.env?.DEV && typeof window !== 'undefined' && built && arcR > 0) {
+  if (import.meta.env?.DEV && typeof window !== 'undefined' && built && arcR !== 0) {
     /* The geometries are separate, so the word's real extent is their union. */
     const bb = new THREE.Box3();
     built.geos.forEach(g => { g.computeBoundingBox(); bb.union(g.boundingBox); });
@@ -211,11 +236,22 @@ export default function AcrylicWord({
    * construction rather than by two tables agreeing. Built here and disposed with the component, as
    * the matcap is: the factory clones the grain texture precisely so a caller can own it. */
   const fondantMat = useMemo(
-    () => (medium === 'fondant'
-      ? buildSolidWallMaterial('fondant',
-          albedoForLight(color || FONDANT_WRITING_COLOR, FONDANT_REFERENCE_LIGHT, { rolloff: FONDANT_ROLLOFF }), 0)
-      : null),
-    [medium, color],
+    () => {
+      if (medium !== 'fondant') return null;
+      const m = buildSolidWallMaterial('fondant',
+        albedoForLight(color || FONDANT_WRITING_COLOR, FONDANT_REFERENCE_LIGHT, { rolloff: FONDANT_ROLLOFF }), 0);
+      /* ⚠️ LUSTRE IS A TREATMENT ON THE PASTE, SO IT TUNES THE FONDANT MATERIAL RATHER THAN
+         REPLACING IT. Edible lustre dust is brushed ONTO fondant — the grain is still there under
+         it — so the normal map and the finish this letter shares with every other fondant on the
+         cake stay exactly as they were, and only the shine moves. Swapping in cream's
+         `metallicCreamProps` would have built a different material and dropped the grain, which is
+         the "two tables agreeing" failure `buildSolidWallMaterial` exists to prevent.
+         ⚠️ AND IT IS NOT ACRYLIC'S GOLD. That is a baked matcap mirror, which on paste reads as
+         perspex — rejected once already. This stays lit by the scene, like the paste it is. */
+      if (lustre) { Object.assign(m, LUSTRE_FINISH); m.needsUpdate = true; }
+      return m;
+    },
+    [medium, color, lustre],
   );
   useEffect(() => () => {
     if (!fondantMat) return;

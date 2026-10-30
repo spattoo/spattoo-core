@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
+import { radiusForCurve } from '../geometry/textPath.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { writingPlaceAt, writingSurface, writingText } from '../geometry/surface.js';
 import { loadTopperFace } from '../geometry/topperFaces.js';
@@ -34,7 +35,7 @@ export default function AcrylicWriting({
 }) {
   const { camera, gl } = useThree();
   const {
-    surface, cakeBaseR, sideY, sideTier, sideRect, sideR, maxW, minSideY, maxSideY, host,
+    surface, cakeBaseR, sideY, sideTier, sideRect, sideR, maxW, minSideY, maxSideY, host, curve,
   } = writingSurface({ writing, tiers, topY, topRadius, shape, width, depth, boardRadius, hostPath });
 
   /* An outline face is ~100KB fetched on demand, so this is a load and not a lookup — and it has to
@@ -181,7 +182,20 @@ export default function AcrylicWriting({
                     handed down `{ radius: undefined }` — an object, therefore truthy, therefore a
                     curve with a NaN radius rather than a straight line. The question is whether
                     this host BENDS, and only a radius answers it. */
-                 arc={host?.radius > 0 ? { radius: host.radius } : null}
+                 /* ⚠️ AND A FONDANT MESSAGE ON THE CAKE BENDS BY ITS OWN DIAL. The arch was the
+                    only curve a cut word could take; Sandeep asked for the controls to match across
+                    the three Looks, and fondant is the one cut material that genuinely can follow a
+                    curve — a baker lays the letters along it. `radiusForCurve` derives the radius
+                    from the same constant `warpArc` uses, so fondant at Curve 0.5 bends by the same
+                    amount piped cream does. Acrylic is excluded here as it is everywhere else: one
+                    sheet, cut flat, cannot bend — *"acrylic wont bend like arch."*
+                    ⚠️ A HOST STILL WINS. On an arch the bend IS the arch and the card hides the
+                    dial, so this only ever reads a curve a baker could actually set. */
+                 arc={host?.radius > 0 ? { radius: host.radius }
+                      : (writing.style === 'fondant' && curve
+                          ? { radius: radiusForCurve(maxW, curve) }
+                          : null)}
+                 lustre={writing.style === 'fondant' && !!writing.metallic}
                  pose={pose} span={maxW} mount={{}} onRise={setRise} />
   );
 

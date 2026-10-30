@@ -82,7 +82,13 @@ function App() {
   const q = new URLSearchParams(location.search);
   const qTrack = q.has('tracking') ? Number(q.get('tracking')) : null;
   const [w, setW] = useState({
-    id: 1, style: 'acrylic',
+    id: 1,
+    /* ⚠️ `?style=fondant` — the page mounted the real `AcrylicWriting` but could only ever ask it
+       for acrylic, so the fondant half of the same renderer had no harness at all. Same gap as the
+       legs', for the same reason this file keeps writing down: a state that cannot be reached hides
+       every bug in it. Reached when fondant gained a Curve dial and a lustre finish of its own and
+       neither could be looked at. */
+    style: q.get('style') === 'fondant' ? 'fondant' : 'acrylic',
     text: q.get('text') ?? 'Ava',
     /* ⚠️ `?caps=1` — CAPITAL LETTERS is a RENDERER's job, and this page could not show whether the
        renderer did it. The textarea in Texts only applies `text-transform` as CSS, so the stored
@@ -95,6 +101,11 @@ function App() {
     tracking: qTrack ?? faceFit(q.get('face') ?? 'great_vibes'),
     surface: q.get('surface') ?? 'side', sideAngle: 0, sideY: 1.0,
     fit: q.has('fit') ? Number(q.get('fit')) : 0.55,
+    /* ?curve= bends a FONDANT word by the baker's own dial (-1..+1); ?lustre=1 is the edible dust. */
+    ...(q.has('curve')  ? { curve: Number(q.get('curve')) } : {}),
+    ...(q.has('lustre') ? { metallic: true } : {}),
+    /* ?color= so a fondant word can be shot against the cake instead of white-on-white. */
+    ...(q.has('color') ? { color: `#${q.get('color').replace('#', '')}` } : {}),
     /* ⚠️ THE STANDING-UP NUMBERS, which nothing here could express and so nothing here could show.
        The studio has authored `legs`, `legLen` and `bury` since it was built and `acrylicCfg` reads
        all three, but the Texts card filtered them out — so the one page that mounts the real

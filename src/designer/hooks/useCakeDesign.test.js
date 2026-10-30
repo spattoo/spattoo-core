@@ -1,5 +1,38 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { initialStickerColor } from './useCakeDesign.js';
+
+const src = readFileSync(new URL('./useCakeDesign.js', import.meta.url), 'utf8');
+
+/* ── Every wholesale replacement announces itself ───────────────────────────────────────────────
+ *
+ * ⚠️ `loadGeneration` IS A PROMISE OTHER CODE RELIES ON, and `resetDesign` was quietly breaking it.
+ * Only the authored-snapshot branch went through `loadDesign`; a plain round New Cake — most of
+ * them — called `setDesign` and told nobody. Two listeners never ran: the GLB sweep kept the old
+ * cake's models resident, and CakeDesigner's editing state kept pointing into a design that no
+ * longer existed, so the pen stayed selected and the next tap on the cake DREW. Reported as a brush
+ * stroke card that "is not cleared when new cake is added".
+ *
+ * A source assertion because the suite never mounts the hook, and because the failure is an
+ * ABSENCE — a branch that forgets to bump a counter looks exactly like a branch that is finished. */
+describe('resetDesign — a new cake is a wholesale replacement, whichever shape it is', () => {
+  const body = src.slice(src.indexOf('function resetDesign'),
+                         src.indexOf('function addStickerBatch'));
+
+  it('bumps the load counter on BOTH branches, not only the authored one', () => {
+    expect(body).toMatch(/if \(def\.design\) loadDesign\(design\);/);
+    expect(body).toMatch(/setLoadGeneration\(n => n \+ 1\)/);
+  });
+
+  it('never replaces the design without saying so', () => {
+    /* Each `setDesign(` in here must sit on a line that also bumps, or be the `loadDesign` call
+       which bumps for it. A bare one is the bug this pins. */
+    for (const line of body.split('\n')) {
+      if (!/\bsetDesign\(/.test(line)) continue;
+      expect(line, line.trim()).toMatch(/setLoadGeneration/);
+    }
+  });
+});
 
 // `recolor` means "the customer MAY change these colours", NOT "repaint this now". These cases pin that:
 // a recolourable sticker renders its own artwork until either the author opts into an at-load repaint

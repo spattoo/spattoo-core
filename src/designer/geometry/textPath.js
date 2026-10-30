@@ -41,6 +41,23 @@ export function curveForArc(width, radius) {
   return -Math.max(0, Math.min(1, theta / WARP_SWEEP_AT_ONE));
 }
 
+/* The inverse, for a curve a BAKER dialled rather than one a host imposed.
+ *
+ * ⚠️ IT EXISTS SO THE TWO MATERIALS BEND BY THE SAME AMOUNT. Cream's Curve dial runs through
+ * `warpArc`, which derives its own radius as `width / (|k| * 2.2)`; a cut word reaches the curve
+ * through `arcLetter`, which wants that radius handed to it. Deriving it here from the same
+ * constant is what stops a fondant message at Curve 0.5 bending differently from a cream one.
+ *
+ * ⚠️ THE RETURN IS SIGNED, because `arcLetter` now takes a signed radius: negative mirrors the
+ * seat, which is how a dial that runs -1..+1 about a flat zero reaches both a ∩ and a ∪. */
+export function radiusForCurve(width, curve) {
+  const k = Math.max(-1, Math.min(1, Number(curve) || 0));
+  if (!(width > 0) || Math.abs(k) < 1e-3) return 0;
+  /* Matching warpArc's sign: its +k lifts the ENDS (a ∪), and arcLetter's positive radius drops
+     them (a ∩), so the sign flips on the way across. */
+  return -Math.sign(k) * (width / (Math.abs(k) * WARP_SWEEP_AT_ONE));
+}
+
 /* ── A CUT letter placed on an arc ───────────────────────────────────────────────────────────────
  *
  * ⚠️ CUT LETTERS ARE NOT BENT, THEY ARE TURNED, and that is the difference between the two materials
@@ -59,9 +76,15 @@ export function curveForArc(width, radius) {
  * `warpArc` leaves cream in, so the two materials seat identically on the host.
  */
 export function arcLetter(x, radius) {
-  if (!(radius > 0)) return { x, y: 0, rot: 0 };
-  const ang = x / radius;
-  return { x: radius * Math.sin(ang), y: radius * (Math.cos(ang) - 1), rot: -ang };
+  /* ⚠️ THE RADIUS IS SIGNED NOW, AND A POSITIVE ONE BEHAVES EXACTLY AS IT ALWAYS DID. An arch hands
+     down a radius and only ever bends one way (∩); a baker's Curve dial runs about a flat zero and
+     has to reach both, so a negative radius mirrors the seat and the turn. Every existing caller
+     passes a host's radius, which is positive, so nothing it placed moves. */
+  const R = Math.abs(radius);
+  if (!(R > 0)) return { x, y: 0, rot: 0 };
+  const s = radius < 0 ? -1 : 1;
+  const ang = x / R;
+  return { x: R * Math.sin(ang), y: s * R * (Math.cos(ang) - 1), rot: -s * ang };
 }
 
 export const ARCH_TEXT_DEFAULTS = Object.freeze({

@@ -14,6 +14,7 @@ import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import textFont from './fonts/NotoSans-Regular.woff?inline';
 import CakeTier from './CakeTier';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
+import { useFlushPendingBoundaries } from './loadingRegistry.js';
 import { SafeEnvironment } from './safeEnvironment.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
 import { baseColourOf, wallTilt } from '../studioBackdrop.js';
@@ -4599,7 +4600,7 @@ const NOOP = () => {};
  * the way it does in a band. Rebuilt whenever any of them changes: the bed ACCUMULATES, so keeping
  * it would leave a dragged stroke's cream behind at the old place.
  */
-function BrushStrokes({ strokes, tier, wallColour, onPick }) {
+function BrushStrokes({ strokes, tier, wallColour, onPick, tierIndex = 0, buildPose = null, reach = 1 }) {
   // Same outline the band walks — a stroke drawn by hand and one laid by the band are the same
   // smear on the same wall, and two answers about where that wall is would show as a seam.
   const handShape = useMemo(() => tierShape(tier), [tier]);
@@ -4662,12 +4663,14 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
   }, [strokes, tier.radius, tier.baseY, tier.height, wallColour, handShape]);
 
   return built.map(({ st, geo }) => (
-    <mesh key={st.id} geometry={geo} castShadow receiveShadow
-      onClick={e => { e.stopPropagation(); onPick?.(st.id); }}>
-      <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(BRUSH_CREAM_SOFTNESS, st.color ?? '#F6DCE2')}
-        color="#ffffff" vertexColors />
-    </mesh>
+    <BuildPiece key={st.id} pose={buildPose?.(`brush:${tierIndex}:${st.id}`)} reach={reach}>
+      <mesh geometry={geo} castShadow receiveShadow
+        onClick={e => { e.stopPropagation(); onPick?.(st.id); }}>
+        <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+          polygonOffsetUnits={-1} {...creamMaterialProps(BRUSH_CREAM_SOFTNESS, st.color ?? '#F6DCE2')}
+          color="#ffffff" vertexColors />
+      </mesh>
+    </BuildPiece>
   ));
 }
 
@@ -4799,6 +4802,14 @@ function CakeContent({ config, scene, edit = null }) {
     (config.tiers ?? []).forEach((t, ti) => {
       for (const p of (t.topPipings ?? (t.topPiping ? [t.topPiping] : []))) ids.push(`top:${ti}:${p.layerId ?? ''}`);
       for (const p of (t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []))) ids.push(`bot:${ti}:${p.layerId ?? ''}`);
+      /* ⚠️ THE BRUSHWORK WAS IN NEITHER LIST, which is the failure the coverage gate cannot see:
+         it checks that everything ENUMERATED is posed, so a piece nobody enumerated has no slot to
+         be missing from. Sandeep, filming this cake: *"the cream brush strokes are not flying."*
+         The BAND is one piece, like grass — a ring a baker presses on in a single pass round the
+         wall — and it is listed only when it actually rings, matching the render's own gate. Each
+         HAND-DRAWN stroke is its own piece, because each is its own smear with its own card. */
+      if (brushBandRings(t.brushBand)) ids.push(`brushband:${ti}`);
+      for (const bs of (t.brushStrokes ?? [])) ids.push(`brush:${ti}:${bs.id}`);
       /* ⚠️ THE PROCEDURAL DECOR WAS NEVER IN THE RUNNING ORDER AT ALL, which is a different fault
          from the one below it. A `writing` was enumerated and never posed; a cloud was never
          enumerated, so it had no slot to ask about and sat finished on the cake through the whole
@@ -5221,10 +5232,16 @@ function CakeContent({ config, scene, edit = null }) {
           {/* ⚠️ ONLY WHEN IT RINGS. A band in 'ask' or 'draw' is on the tier but not on the wall —
               see brushBandRings, which also decides that a band saved before the field existed
               still draws. */}
-          <BrushBand band={brushBandRings(tier.brushBand) ? tier.brushBand : null} tier={tier} wallColour={tier.color}
-            onClick={onBrushBandClick ? () => onBrushBandClick(i) : null} />
-          {/* And the hand-drawn ones. Clickable, because each has its own card. */}
+          <BuildPiece pose={poseFor(`brushband:${i}`)} reach={(bottomTier?.radius ?? 1)}>
+            <BrushBand band={brushBandRings(tier.brushBand) ? tier.brushBand : null} tier={tier} wallColour={tier.color}
+              onClick={onBrushBandClick ? () => onBrushBandClick(i) : null} />
+          </BuildPiece>
+          {/* And the hand-drawn ones. Clickable, because each has its own card — and each flies in
+              on its own bearing for the same reason, so a wall of strokes arrives as many marks
+              rather than one rigid sheet. The wrapper goes round each MESH inside the component,
+              not round the component, which is why it takes the lookup rather than a pose. */}
           <BrushStrokes strokes={tier.brushStrokes ?? []} tier={tier} wallColour={tier.color}
+            tierIndex={i} buildPose={poseFor} reach={(bottomTier?.radius ?? 1)}
             onPick={id => onBrushStrokeClick?.(i, id)} />
           {/* Fondant clouds belonging to THIS tier. Same tier-scoped cake object as the rainbow —
               the generator asks for { radius, topY, boardY } and does not care whether that is a
@@ -6785,6 +6802,15 @@ export default function CakeCanvas({
   brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
   sprinkleHand = null, onSprinklePlace,
 }) {
+  /* ⚠️ HERE, AND IN THIS COMPONENT RATHER THAN DEEPER. A Suspense boundary inside the <Canvas>
+     lives in R3F's own React root, and a resolved asset does not reliably give that root work to
+     do — so the boundary keeps showing its fallback after every byte has arrived, the decoration
+     is never drawn, and the spinner stays up until something unrelated re-renders the tree. This
+     re-renders while anything is pending, which is what retries it. It has to be CakeCanvas: a
+     fallback re-rendering itself does not retry its own boundary, and a wrapper that re-renders
+     `{children}` is bailed out of when the child elements are referentially unchanged. See
+     useFlushPendingBoundaries for the measurements and for why this is a mitigation, not the cause. */
+  useFlushPendingBoundaries();
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
   const cameraRef   = useRef(null);

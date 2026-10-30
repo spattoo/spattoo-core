@@ -76,11 +76,30 @@ describe('the build take enumerates and poses the same pieces', () => {
       + `the piece never flies: ${orphan.join(', ')}`).toEqual([]);
   });
 
-  it('the kinds the reported bug was about are both covered', () => {
+  /* ⚠️ THE TWO CHECKS ABOVE CANNOT SEE A PIECE THAT IS IN NEITHER LIST, and that is the fault that
+     keeps being reported. They compare two sets against each other, so a decoration nobody
+     enumerated has no slot to be missing from and no renderer asking about it — both sets agree,
+     perfectly, about a cake that sits still. Every report so far has been this shape: the clouds
+     ("clouds and 'welcome home' text are not flying" — the text was the posing fault, the clouds
+     were this one), and then the brushwork: *"the cream brush strokes are not flying."*
+
+     There is no way to derive the right answer from the source — "what can a baker put on a cake"
+     lives in `useCakeDesign`'s shape and in a dozen renderers — so this is a NAMED LIST, and the
+     cost of that is honest: a new kind of decoration has to be added here by hand. It is one line,
+     and it is the line that makes the next one of these fail in CI rather than on a baker's film. */
+  it('every kind a baker can place is in the running order', () => {
     const e = [...enumerated()], c = [...consumed()];
-    for (const kind of ['writing', 'cloud']) {
-      expect(e.some(id => id.startsWith(`${kind}:`)), `${kind} must be enumerated`).toBe(true);
-      expect(c.some(id => id.startsWith(`${kind}:`)), `${kind} must ask for its pose`).toBe(true);
+    const kinds = [
+      'top', 'bot',              // piping rings
+      'writing', 'text', 'age',  // lettering
+      'cloud', 'rainbow', 'balloon',
+      'grass', 'gyp', 'sand',
+      'garnish', 'topper', 'sticker',
+      'brushband', 'brush',      // the wall's brushwork — band, and each hand-drawn stroke
+    ];
+    for (const kind of kinds) {
+      expect(e.some(id => id.startsWith(`${kind}:`)), `${kind} must be enumerated in buildIds`).toBe(true);
+      expect(c.some(id => id.startsWith(`${kind}:`)), `${kind} must ask poseFor for its pose`).toBe(true);
     }
   });
 });

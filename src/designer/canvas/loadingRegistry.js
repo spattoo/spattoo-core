@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One loader per page, not one per element.
@@ -161,6 +161,57 @@ export function loadingState() {
 }
 
 // true while any decoration is still loading. Drives the single page-level overlay.
+/**
+ * Re-render the live canvas while a boundary is still pending, so React actually RETRIES it.
+ *
+ * ⚠️ THIS IS A FLUSH, NOT A LOADER. Nothing here fetches anything or waits for a byte. A Suspense
+ * boundary inside the `<Canvas>` lives in R3F's own React root, and when its promise resolves that
+ * root is not always given work to do — so the boundary keeps showing its fallback after the asset
+ * has arrived and been parsed. The decoration is not drawn, the scene stays unlit, and the spinner
+ * stays up, for as long as nothing else happens to re-render the tree.
+ *
+ * ⚠️ IT IS THE BUG THE COMMENTS ABOVE AND IN CakeCanvas ALREADY DESCRIBE, from the other side.
+ * `SceneKindContext` records "one held for SIXTY-TWO SECONDS after every byte had arrived, with no
+ * network event releasing it — it cleared when the tab was switched, i.e. on a re-render", and the
+ * note above records the same thing clearing when the window was switched to a phone width. Both
+ * were read as the CAPTURE root's problem and only the capture half was fixed (`channel`). The
+ * live root has it too, and that half is what a baker waits on.
+ *
+ * Measured on the production build through `npm run measure:template`, fresh browser each time:
+ * 4 of 5 cold loads of "welcome home" never settled, and every one cleared the instant anything
+ * re-rendered. A one-pixel resize cleared it; 2430 WebGL draw calls in two seconds did NOT, which
+ * is how we know frames were never the missing thing — React work was.
+ *
+ * ⚠️ WHY IT RE-RENDERS THE CANVAS AND NOT THE FALLBACK. `LoadingPing` is the fallback, and a state
+ * update inside a fallback re-renders only the fallback — React re-attempts a boundary's real
+ * children when an ANCESTOR renders. It also cannot be a component wrapping the scene that merely
+ * re-renders `{children}`, because React bails out when the child elements are referentially the
+ * same. It has to be a render of the component whose JSX CREATES those elements.
+ *
+ * ⚠️ AND IT IS A MITIGATION, NOT THE CAUSE. The cause is upstream: a resolved promise in R3F's root
+ * not scheduling React work (fiber 8.18, React 18.3). Preloading every asset before it is mounted
+ * would avoid suspending at all and is the deeper fix; this is the small one that stops a baker
+ * staring at a cake with a hole in it. Say which is which — do not let this read as a diagnosis.
+ *
+ * The grace means a normal load never nudges: assets that resolve quickly are done long before the
+ * first tick, so this costs nothing on the path that already works.
+ */
+const FLUSH_GRACE_MS = 600;
+const FLUSH_EVERY_MS = 400;
+
+export function useFlushPendingBoundaries() {
+  const loading = useAnyLoading();
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (!loading) return undefined;
+    let timer = null;
+    const start = setTimeout(() => {
+      timer = setInterval(() => bump(n => (n + 1) % 1e6), FLUSH_EVERY_MS);
+    }, FLUSH_GRACE_MS);
+    return () => { clearTimeout(start); if (timer) clearInterval(timer); };
+  }, [loading]);
+}
+
 export function useAnyLoading() {
   return useSyncExternalStore(
     cb => { listeners.add(cb); return () => listeners.delete(cb); },

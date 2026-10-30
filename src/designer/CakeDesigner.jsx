@@ -51,6 +51,8 @@ const FRAME_GAP = 16;
  */
 const FRAME_LEFT = `${RAIL_RIGHT - (RAIL.padLeft + RAIL.width) + FRAME_GAP}px`;
 import { Panel, PanelBlock, Z } from '../shared/Panel.jsx';
+import { NavRow } from '../shared/NavRow.jsx';           // THE row that opens something (rule 7)
+import { PanelBackArrow } from '../shared/panelTopBar.jsx'; // the phone's leading control, 44px
 import { PencilIcon } from '../shared/icons.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
@@ -59,7 +61,7 @@ import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
-import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, WRITING_CUT, writingFit, FONDANT_WRITING_COLOR,
+import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, WRITING_CUT, writingFit, FONDANT_WRITING_COLOR, NOMINAL_MM_PER_UNIT,
          THUMB_VIEWS, THUMB_VIEW_DEFAULT, THUMB_EL_MIN, THUMB_EL_MAX, thumbViewDir, BOARD_TOP_Y } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
@@ -158,6 +160,22 @@ export function tourMayRun({ isCustomer, tourSeen, choseScratch }) {
    ("yes i mean 900px version"). `fde91ba9` had this same number right about the RHYTHM and wrong
    about the role — it pinned the gap there and let the column overflow a short blade. */
 const RAIL_NAV_GAP = 20;
+/* ⚠️ THE RAIL STOPS GROWING, AND THAT IS A SHAPE DECISION RATHER THAN A LAYOUT ONE. It is drawn as
+ * a spatula, and a spatula has proportions: `SpatulaFrame` gives the head a fixed 259px (a 194px
+ * blade under a 65px shoulder) and lets the HANDLE take whatever is left. On a landscape window
+ * that is a utensil. On a portrait tablet it is a 1,081px handle on the same small head — a stick.
+ * Sandeep, on a Lenovo Idea Tab Plus held upright: *"we need to fix the spatula. it is fine on the
+ * horizontal."*
+ *
+ * ⚠️ 840 IS MEASURED, NOT PICKED. It is what the rail renders at on the 900px window this file's
+ * nav rhythm was already tuned against (see `sidebarNav` — "spread UNTIL the 900px rhythm"), which
+ * is the proportion that was approved. Its own content needs 791 (52 of cap clearance + 565 of
+ * items + a 174 bottom group), so 840 clears the content and leaves the head its full depth.
+ *
+ * ⚠️ IT IS A CEILING, NEVER A FLOOR. A short window still shrinks the rail and the nav still
+ * scrolls — that is the whole of `fde91ba9`'s bug, where a fixed pitch hid Share off the bottom
+ * with no scrollbar to say so. `maxHeight` cannot cause that; only a `height` could. */
+const RAIL_MAX_H = 840;
 /* The plain customer bar's width — see sidebarPlain for why 52. Declared beside the gap so the two
    numbers defining that bar's footprint sit together, and so the flyout can anchor to its real edge. */
 const PLAIN_RAIL_W = 52;
@@ -639,17 +657,41 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
    so its default size fell through to cream's — twice the intended size, on the one Look whose
    letters have no height clamp to hide it. */
 const WRITING_LOOKS = {
-  cream:   { label: 'Piped cream', surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.cream },
-  acrylic: { label: 'Acrylic',     surfaces: ['top', 'side'],          cut: WRITING_CUT.acrylic },
+  cream:   { label: 'Piped cream', surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.cream,   bends: true  },
+  acrylic: { label: 'Acrylic',     surfaces: ['top', 'side'],          cut: WRITING_CUT.acrylic, bends: false },
   /* Fondant goes everywhere cream does — it is paste, and a flat letter sits on a drum as happily as
      on the cake. On the TOP it is the one Look with a choice to make, because both readings are real
      things bakers do: HUG (lying on the icing, the common one) or STAND (propped upright on prongs).
      Sandeep: "fondant letters can go on both side,top and board. on top, fondant letters can hug or
      stand." Acrylic has no such choice — a perspex sheet lying flat on a cake top is not a thing. */
-  fondant: { label: 'Fondant',     surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.fondant },
+  fondant: { label: 'Fondant',     surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.fondant, bends: true  },
 };
 const SURFACE_LABELS = { top: 'Top', side: 'Side', board: 'Board' };
+/* ⚠️ ONE DEFINITION OF WHAT GOLD AND SILVER LOOK LIKE. The Texts card draws these gradients on its
+   Colour/Gold/Silver swatches, and on a phone the nav row that OPENS that level draws the chosen one
+   again as a dot. Two literals is the preview-disagrees-with-the-thing bug (INVARIANTS #15) in its
+   smallest form, so the gradient is named once and both read it. */
+const CREAM_GOLD_SWATCH   = 'linear-gradient(135deg,#f7e29a 0%,#caa12f 45%,#8a6b14 100%)';
+const CREAM_SILVER_SWATCH = 'linear-gradient(135deg,#fbfcfd 0%,#c2c8cf 45%,#8b9097 100%)';
+
+/* The chosen colour, small, as a NavRow's right-hand value. A colour has no name in this app — the
+   wheel returns a hex — so a row reading "Colour  #f2c4d8" tells a baker nothing and the dot tells
+   them everything. Takes a `fill` rather than a colour because gold and silver are gradients. */
+function ColourDot({ fill }) {
+  return <span style={{ display: 'block', width: 18, height: 18, borderRadius: '50%',
+                        background: fill, border: '1px solid #00000026' }} />;
+}
 const writingSurfaces = (style) => (WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).surfaces;
+/* ⚠️ CAN THIS MATERIAL FOLLOW A CURVE? A SECOND QUESTION, AND NOT THE OPPOSITE OF `cut`. Cream
+   bends because a nozzle travels a path; FONDANT bends because the letters are laid along the curve
+   one at a time (`arcLetter` turns each glyph); acrylic cannot, because it is one sheet cut flat —
+   *"acrylic wont bend like arch."* So two of the three are cut and two of the three bend, and they
+   are not the same two. Written as a bare "is it not the acrylic one" test this would have been the
+   exact pattern `writingLooks.test.js` forbids — and rightly, because that spelling used to mean
+   "cream only" and switched itself on for fondant the day a third Look arrived. The test greps the
+   source, so it catches the shape even in a comment. A fourth material is a row here. */
+const writingBends = (style) => (WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).bends !== false;
+
 /* Is this Look cut from a sheet? The question every control on the card actually asks. */
 const writingIsCut = (style) => !!(WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).cut;
 /* The top-surface pose, fondant's only extra decision. 'hug' lies on the icing; 'stand' goes up on
@@ -3928,6 +3970,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [fanCount, setFanCount] = useState(5);
   const [penStyle, setPenStyle] = useState({ medium: DEFAULT_MEDIUM, nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, smooth: SMOOTH_DEFAULT, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
+  /* ⚠️ WHICH LEVEL OF THE TEXTS CARD A PHONE IS STANDING ON — `null` is the root, where the message
+     is typed. Desktop never reads it: the card is one column there, because a back arrow beside a
+     permanent rail points backward in a stack that does not exist (shared/panelTopBar.jsx). */
+  const [writingLevel, setWritingLevel] = useState(null);
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [elementById, setElementById] = useState(() => new Map()); // id → element row, for placed-sticker config lookups
@@ -4873,6 +4919,37 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const pickedBrushStroke = pickedBrush
     ? (design.tiers[pickedBrush.tier]?.brushStrokes ?? []).find(st => st.id === pickedBrush.id) ?? null
     : null;
+
+  /* ── A new cake clears what was being EDITED, not just what was on the cake ────────────────────
+   *
+   * ⚠️ THE PEN IS A SELECTED TOOL, AND THE SELECTION OUTLIVED THE DESIGN. Sandeep: *"i used brush
+   * stokes on a cake. then i clicked on new cake and added this drapped ribbon. i clicked on cake
+   * and this brush stroke small popup appeared. this is not cleared when new cake is added."* With
+   * the pen still selected, the next tap on the cake is not a tap — it DRAWS, and the stroke it
+   * makes opens its own card. So the stale thing was never the card; it was the tool behind it.
+   *
+   * ⚠️ IT KEYS ON `loadGeneration`, THE COUNTER THE DESIGN SWAP ALREADY BUMPS, so one effect covers
+   * New Cake, loading a template, and a customer resuming a shared invite — three doors into the
+   * same state. Keying on `design` instead would fire on every edit and make the cake unselectable.
+   *
+   * ⚠️ ONLY WHAT POINTS AT THE OLD DESIGN. `penStyle` is a PREFERENCE — the colour and nozzle a
+   * baker set — and survives, the way their studio look does. What goes is everything holding an id
+   * or an index into a design that no longer exists: the picked piece, its Undo snapshot, a brush
+   * half-drawn, and the pending placements waiting for a tap that will now land on a different cake.
+   */
+  useEffect(() => {
+    if (!loadGeneration) return;
+    selectExclusive(null);
+    setPickedStrokeId(null);
+    setPickedBefore(null);
+    setPickedBrush(null);
+    setPickedBrushBefore(null);
+    setBrushDraw(null);
+    setPenMove(false);
+    setPendingCream(null);
+    setPendingTopper(null);
+    setPendingGarnish(null);
+  }, [loadGeneration]);
   const brushChanged = !!pickedBrushStroke && !!pickedBrushBefore
     && ['color', 'weight', 'width'].some(
       k => JSON.stringify(pickedBrushStroke[k]) !== JSON.stringify(pickedBrushBefore[k]));
@@ -5621,8 +5698,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    *
    * Only while FRAMING and only on a phone: on desktop the panel is centred and the frame is parked
    * beside it, so there is nothing to get out of the way of. */
+  /* ⚠️ `VH`, NOT A LITERAL `vh` — this is a MOBILE-ONLY height and it was the one place still
+     asking for the large viewport. The constant at the top of this file exists for exactly this:
+     on iOS Safari `100vh` is the height the page would have with the toolbars hidden, so a sheet
+     measured against it runs past the bottom of what is actually on screen and its last rows sit
+     behind the toolbar. Every other mobile height here already uses `VH`; this one was missed. */
   const takeSheetMaxH = (isMobile && framing && frameBottom > 0)
-    ? `calc(100vh - ${Math.round(frameBottom) + 10}px)`
+    ? `calc(100${VH} - ${Math.round(frameBottom) + 10}px)`
     : undefined;
   // Capability gate for nav/chrome. Unknown caps (not loaded / no /me) → show all,
   // preserving existing baker apps. '*' = super admin. Enforcement is server-side;
@@ -8114,6 +8196,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // be a second definition of it.
   function handleBalloonMove(tierIndex, id, patch) {
     updateTierBalloons(tierIndex, cur => cur.map(b => (b.id === id ? { ...b, ...patch } : b)));
+  }
+
+  /* ⚠️ THE ADMIN TICK WAS ALREADY READ — THERE WAS JUST NOTHING TO SHOW. `instanceActions` has
+     returned `duplicate` off the catalogue row since it was written, and the balloon card offers
+     it; the cloud card only ever rendered `delete`, so ticking "duplicatable" on Puffy or Flat
+     cloud saved a value nobody drew a button for. Sandeep: *"flat cloud and puffy cloud, both do
+     not have duplicate button on the card. both are duplicatable in admin. but its not taking from
+     admin i think."* Half right: it IS taken from admin, which is why Remove obeys the row.
+
+     ⚠️ THE COPY IS VISIBLY A SECOND CLOUD, not a redraw of the first. `addCloud` already turns each
+     new one further round (`yaw: cur.length * 0.9`) for exactly this reason — a duplicate landing
+     at the same yaw, surface and standoff is invisible, and the baker presses it again. Same
+     reasoning as `duplicateBalloon`, which offsets theta and float.
+     ⚠️ READ FROM THE LIVE LIST INSIDE THE UPDATER, or two quick presses both see the same list and
+     the second copy lands exactly on the first. */
+  function duplicateCloud(tierIndex, id) {
+    const copyId = `cl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    updateTierClouds(tierIndex, cur => {
+      const src = cur.find(c => c.id === id);
+      if (!src) return cur;
+      return [...cur, { ...src, id: copyId, yaw: (src.yaw ?? 0) + 0.9 }];
+    });
+    selectExclusive({ type: 'cloud', tierIndex, id: copyId });
   }
 
   function removeCloud(tierIndex, id) {
@@ -11754,6 +11859,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const activeWriting = writings.find(w => w.id === selectedWritingId) ?? null;
   const setWriting = changes => { if (selectedWritingId) updateWriting(selectedWritingId, changes); };
   const clearWriting = () => { if (selectedWritingId) removeWriting(selectedWritingId); };
+  /* ⚠️ A NEW CARD OPENS AT ITS ROOT. The level is one piece of state for every message, so without
+     this, tapping Texts → Font → Done and then opening a DIFFERENT message dropped the baker
+     straight into that message's Font level with no memory of how they got there. `selectedWritingId`
+     is null while no card is open, so closing resets it too — the same reason the New Cake fix
+     watches `loadGeneration` rather than trying to clear state at every exit. */
+  useEffect(() => { setWritingLevel(null); }, [selectedWritingId]);
   const hasWriting = writings.length > 0;
   const elementStackOpen = (decorationCards.length > 0 || pipingCards.length > 0 || hasWriting)
     && !toolsOpen
@@ -15220,48 +15331,75 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const w = activeWriting ?? {};
     const isMultiline = (w.text ?? '').includes('\n');
     const surface = w.surface ?? 'top';
+    /* ⚠️ THE SAME ANSWER `AcrylicWriting` REACHES, because the Thickness dial has to show the sheet
+       the renderer will actually use. A cut word STANDS on the top unless it is fondant hugging;
+       the side and the board lay it flat, and the two poses carry different default thicknesses
+       (3mm standing to hold the word up, thinner lying down where a 3mm edge reads as bent rod). */
+    const cutStanding = surface === 'top'
+      && (w.style !== 'fondant' || writingTopPose(w) === 'stand');
     /* A surface this material no longer offers is still shown while a message is ON it, so an
      * existing design (or an order being looked at) stays legible and editable instead of showing a
      * chooser with nothing selected. New messages simply never reach it. */
     const offered = writingSurfaces(w.style ?? 'cream');
     const SURFACES = (offered.includes(surface) ? offered : [...offered, surface])
       .map(k => ({ k, label: SURFACE_LABELS[k] }));
-    return (
-      <>
-        {/* ⚠️ A HOSTED MESSAGE IS NOT ON A CAKE SURFACE, so the Top/Side/Board chooser has nothing
-            to choose between — it is on the rainbow until it is removed. It is REPLACED rather than
-            dropped: a card that silently loses its first control leaves a baker wondering where the
-            message went, and the line also answers "why is there no Curve dial". */}
-        {w.on ? (
-          /* ⚠️ THE HOST'S OWN NAME, AND WHAT IT DOES TO THE LINE. This read "ON THE RAINBOW ·
-             follows its curve" when a rainbow was the only thing a message could sit on — and the
-             day a second host shipped it was a label that lied on the new one, about a curve a
-             flat plaque does not have. The caption is derived from the host the message actually
-             carries, so adding a third shape cannot leave this stale. */
-          <div style={{ fontSize: 11, fontWeight: 800, color: '#6B8C74', letterSpacing: 0.3,
-                        padding: '7px 2px', flexShrink: 0 }}>
-            {w.on.kind === 'rainbow' ? 'ON THE RAINBOW · follows its curve' : 'ON THE DECORATION'}
-          </div>
-        ) : (
-        <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
-          {SURFACES.map(sf => (
-            <button key={sf.k} onClick={() => setWriting({ surface: sf.k })}
-              style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
-                background: surface === sf.k ? INK : 'transparent', color: surface === sf.k ? '#fff' : INK }}>
-              {sf.label}
-            </button>
-          ))}
-        </div>
-        )}
 
+    /* ── THE CARD IS BUILT FROM BLOCKS SO THE PHONE CAN DEAL THEM OUT OVER LEVELS ────────────────
+     * Every control below exists ONCE. Desktop concatenates the blocks in the order they have always
+     * been in; a phone puts the message at the root and each block behind a NavRow. Two copies of a
+     * control is how a dial starts meaning different things on different screens — so the branch is
+     * over WHERE a block is rendered, never over what is in it.
+     *
+     * `head` is the small grey caption a block carries on desktop. On a phone the level is already
+     * named by the bar above it, so the caption would be the title said twice.
+     */
+    const headStyle = (marginTop = 8, marginBottom = 0) => ({
+      fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+      textTransform: 'uppercase', marginTop, marginBottom,
+    });
+
+    /* ⚠️ A HOSTED MESSAGE IS NOT ON A CAKE SURFACE, so the Top/Side/Board chooser has nothing
+        to choose between — it is on the rainbow until it is removed. It is REPLACED rather than
+        dropped: a card that silently loses its first control leaves a baker wondering where the
+        message went, and the line also answers "why is there no Curve dial". */
+    /* ⚠️ THE HOST'S OWN NAME, AND WHAT IT DOES TO THE LINE. This read "ON THE RAINBOW ·
+       follows its curve" when a rainbow was the only thing a message could sit on — and the
+       day a second host shipped it was a label that lied on the new one, about a curve a
+       flat plaque does not have. The caption is derived from the host the message actually
+       carries, so adding a third shape cannot leave this stale. */
+    const hostCaption = w.on ? (
+      <div style={{ fontSize: 11, fontWeight: 800, color: '#6B8C74', letterSpacing: 0.3,
+                    padding: '7px 2px', flexShrink: 0 }}>
+        {w.on.kind === 'rainbow' ? 'ON THE RAINBOW · follows its curve' : 'ON THE DECORATION'}
+      </div>
+    ) : null;
+
+    const surfaceTabs = w.on ? null : (
+      <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
+        {SURFACES.map(sf => (
+          <button key={sf.k} onClick={() => setWriting({ surface: sf.k })}
+            style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
+              background: surface === sf.k ? INK : 'transparent', color: surface === sf.k ? '#fff' : INK }}>
+            {sf.label}
+          </button>
+        ))}
+      </div>
+    );
+
+    /* ⚠️ TWO ROWS ON A PHONE, FOUR ON DESKTOP, AND THE RESIZE HANDLE SURVIVES BOTH. A cake message
+       is three words; a four-row box with the keyboard up left a third of the visible card for the
+       box and nothing for the controls — reported as exactly that: "it took almost all the space".
+       `resize: vertical` is kept so a long multi-line message can still be seen whole. */
+    const messageBox = (
+      <>
         <textarea
           value={w.text ?? ''}
           onChange={e => setWriting({ text: e.target.value })}
           placeholder={'Type a message…\n(Enter for a new line)'}
-          rows={4}
+          rows={isMobile ? 2 : 4}
           style={{ width: '100%', boxSizing: 'border-box', padding: '10px 11px', fontSize: 15, fontWeight: 700, color: '#444',
             border: `1.5px solid ${LINE}`, borderRadius: 10, outline: 'none', background: '#ffffff', fontFamily: "'Quicksand', sans-serif",
-            flexShrink: 0, resize: 'vertical', lineHeight: 1.4, minHeight: 80,
+            flexShrink: 0, resize: 'vertical', lineHeight: 1.4, minHeight: isMobile ? 48 : 80,
             textTransform: w.uppercase ? 'uppercase' : 'none' }}
         />
 
@@ -15275,18 +15413,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </button>
           <span style={{ fontSize: 12, fontWeight: 800, color: '#666' }}>CAPITAL LETTERS</span>
         </label>
+      </>
+    );
 
-        {/* ── What it is made of ────────────────────────────────────────────────
-            Cream is piped; acrylic is cut from a sheet and stands or lies against the wall. The
-            message survives the switch — same text, same surface, same place — because they are one
-            object in two materials.
+    /* ── What it is made of ────────────────────────────────────────────────
+        Cream is piped; acrylic is cut from a sheet and stands or lies against the wall. The
+        message survives the switch — same text, same surface, same place — because they are one
+        object in two materials.
 
-            ⚠️ NOT OFFERED on a message that came from a catalogue row (`lockLook`). There the
-            material is the product somebody authored and put on the shelf, not a preference — and
-            "Piped cream" would quietly discard its sheet, bar, legs and finishes. The choice is real
-            in Texts, where the customer is typing a message of their own. */}
+        ⚠️ NOT OFFERED on a message that came from a catalogue row (`lockLook`). There the
+        material is the product somebody authored and put on the shelf, not a preference — and
+        "Piped cream" would quietly discard its sheet, bar, legs and finishes. The choice is real
+        in Texts, where the customer is typing a message of their own. */
+    const lookBlock = (head) => (
+      <>
         {!w.lockLook && (<>
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Look</div>
+        {head && <div style={headStyle(8)}>Look</div>}
         <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
           {/* From WRITING_LOOKS, so a fourth material is a row rather than another button here. */}
           {Object.entries(WRITING_LOOKS).map(([k, L]) => ({ k, label: L.label })).map(st => (
@@ -15300,95 +15442,132 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           ))}
         </div>
         </>)}
+      </>
+    );
 
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
-        {/* ⚠️ NAMES IN A SCROLLING STRIP, NOT SPECIMEN TILES — and the argument against this is
-            written down in TopperComposer's FaceList: "a dropdown of font NAMES is the thing every
-            card-topper site gets wrong: the one question is what it looks like, and a name in the
-            browser's UI font cannot answer it."
+    const faces = writingIsCut(w.style)
+      ? Object.entries(TOPPER_FACES).map(([key, f]) => ({ key, label: f.label }))
+      : CREAM_FONTS;
 
-            That objection is about a DROPDOWN, and it stands: a native select hides the list and, on
-            a phone, throws a wheel over the very cake you are judging against. A strip does neither.
-            Sandeep: "user can see that on the cake and keep the best one" — with the sheet docked at
-            the bottom and the cake live above it, tapping along the strip answers "what does it look
-            like" with the actual cake rather than a 54px thumbnail of it. That is INVARIANTS #11 in
-            its favour: the control and its effect, visible together.
+    /* ⚠️ NAMES IN A SCROLLING STRIP, NOT SPECIMEN TILES — and the argument against this is
+        written down in TopperComposer's FaceList: "a dropdown of font NAMES is the thing every
+        card-topper site gets wrong: the one question is what it looks like, and a name in the
+        browser's UI font cannot answer it."
 
-            ⚠️ Segmented rather than a hand-rolled row, because a font is a MUTUALLY EXCLUSIVE choice
-            (its own comment draws that line against Chip) and it brings the tablist ARIA, the roving
-            tabindex and the 44px target the tiles never had. Eleven names wrap to three rows inside
-            a tinted track on a phone, which is no smaller than the grid — hence `scroll`. */}
+        That objection is about a DROPDOWN, and it stands: a native select hides the list and, on
+        a phone, throws a wheel over the very cake you are judging against. A strip does neither.
+        Sandeep: "user can see that on the cake and keep the best one" — with the sheet docked at
+        the bottom and the cake live above it, tapping along the strip answers "what does it look
+        like" with the actual cake rather than a 54px thumbnail of it. That is INVARIANTS #11 in
+        its favour: the control and its effect, visible together.
+
+        ⚠️ Segmented rather than a hand-rolled row, because a font is a MUTUALLY EXCLUSIVE choice
+        (its own comment draws that line against Chip) and it brings the tablist ARIA, the roving
+        tabindex and the 44px target the tiles never had. Eleven names wrap to three rows inside
+        a tinted track on a phone, which is no smaller than the grid — hence `scroll`. */
+    const fontBlock = (head) => (
+      <>
+        {head && <div style={headStyle(2)}>Font</div>}
         <Segmented
           scroll
           isMobile={isMobile}
           label="Lettering font"
           value={w.font ?? ''}
-          items={(writingIsCut(w.style)
-            ? Object.entries(TOPPER_FACES).map(([key, f]) => ({ key, label: f.label }))
-            : CREAM_FONTS
-          ).map(f => ({ id: f.key, label: f.label }))}
+          items={faces.map(f => ({ id: f.key, label: f.label }))}
           onChange={k => setWriting({ font: k, ...(writingIsCut(w.style) ? { tracking: faceFit(k) } : {}) })}
         />
+      </>
+    );
 
-        {/* An acrylic finish is a MATERIAL, not a colour — mirror gold is nothing but its
-            reflections, gloss black is pigment under clear. So the wheel is replaced rather than
-            recoloured; there is no arbitrary hue to pick. */}
+    /* An acrylic finish is a MATERIAL, not a colour — mirror gold is nothing but its
+        reflections, gloss black is pigment under clear. So the wheel is replaced rather than
+        recoloured; there is no arbitrary hue to pick. */
+    /* ⚠️ `=== 'acrylic'`, NEVER `!== 'acrylic'`, AND `writingLooks.test.js` FAILS ON THE INVERSE.
+        The negative spelling is the one that used to mean "cream only" across this whole card and
+        switched itself on for fondant the day a third Look shipped — so it is banned by name even
+        where, as here, it would have been correct. */
+    const finishBlock = (head) => (
+      <>
         {w.style === 'acrylic' && <>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Finish</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {/* Only the finishes this element offers. A row authoring gold and black should not
-                show rose — the studio's list is a decision, not a suggestion. */}
-            {acrylicFinishes(w).map(k => TOPPER_FINISHES[k] && [k, TOPPER_FINISHES[k]]).filter(Boolean).map(([k, f]) => (
-              <button key={k} onClick={() => setWriting({ acrylicFinish: k })}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, cursor: 'pointer',
-                  fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, background: '#fff',
-                  border: `2px solid ${(w.acrylicFinish ?? 'gold') === k ? INK : '#e2ddd6'}` }}>
-                <span style={{ width: 14, height: 14, borderRadius: 4, background: f.color, border: '1px solid #00000022' }} />
-                {f.label}
-              </button>
-            ))}
-          </div>
+        {head && <div style={headStyle(8)}>Finish</div>}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {/* Only the finishes this element offers. A row authoring gold and black should not
+              show rose — the studio's list is a decision, not a suggestion. */}
+          {acrylicFinishes(w).map(k => TOPPER_FINISHES[k] && [k, TOPPER_FINISHES[k]]).filter(Boolean).map(([k, f]) => (
+            <button key={k} onClick={() => setWriting({ acrylicFinish: k })}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, background: '#fff',
+                border: `2px solid ${(w.acrylicFinish ?? 'gold') === k ? INK : '#e2ddd6'}` }}>
+              <span style={{ width: 14, height: 14, borderRadius: 4, background: f.color, border: '1px solid #00000022' }} />
+              {f.label}
+            </button>
+          ))}
+        </div>
         </>}
+      </>
+    );
 
-        {/* ── Fondant: a colour, and on the top the one pose decision ─────────────────────────
-            ⚠️ A COLOUR, NOT A FINISH — the opposite call from acrylic's, and for the opposite
-            reason. Mirror gold is nothing but its reflections, so acrylic offers materials; fondant
-            is white paste with gel kneaded through it, so the only question is which hue. The
-            metallic toggle that rides with the cream wheel is deliberately not here: it turns piped
-            icing shimmery, and there is no such thing as metallic fondant off the roll.
-            The wheel is always open rather than behind a swatch, because unlike cream there is no
-            Gold/Silver alternative for it to sit beside — a chooser of one is not a chooser. */}
+    /* ── Fondant: a colour, and on the top the one pose decision ─────────────────────────
+        ⚠️ A COLOUR, NOT A FINISH — the opposite call from acrylic's, and for the opposite
+        reason. Mirror gold is nothing but its reflections, so acrylic offers materials; fondant
+        is white paste with gel kneaded through it, so the only question is which hue. The
+        metallic toggle that rides with the cream wheel is deliberately not here: it turns piped
+        icing shimmery, and there is no such thing as metallic fondant off the roll.
+        The wheel is always open rather than behind a swatch, because unlike cream there is no
+        Gold/Silver alternative for it to sit beside — a chooser of one is not a chooser. */
+    /* ⚠️ `!w.on` — "hug or stand" is a question about the cake's TOP, and a hosted message is
+        not on it. The card reads `w.surface`, which stays 'top' on a hosted message (it is
+        the cake surface it would fall back to), so without this the row offered a pose that
+        the renderer overrides: a message on a rainbow stands in the rainbow's plane whatever
+        this says. */
+    const posePlace = w.style === 'fondant' && surface === 'top' && !w.on;
+    const poseBlock = (head) => (
+      <>
+        {posePlace && <>
+        {head && <div style={headStyle(8)}>On the top</div>}
+        <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
+          {[{ k: 'hug', label: 'Hug the cake' }, { k: 'stand', label: 'Stand up' }].map(o => (
+            <button key={o.k} onClick={() => setWriting({ topPose: o.k })}
+              style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
+                background: writingTopPose(w) === o.k ? INK : 'transparent',
+                color: writingTopPose(w) === o.k ? '#fff' : INK }}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+        </>}
+      </>
+    );
+
+    const fondantColourBlock = (head) => (
+      <>
         {w.style === 'fondant' && <>
-          {/* ⚠️ `!w.on` — "hug or stand" is a question about the cake's TOP, and a hosted message is
-              not on it. The card reads `w.surface`, which stays 'top' on a hosted message (it is
-              the cake surface it would fall back to), so without this the row offered a pose that
-              the renderer overrides: a message on a rainbow stands in the rainbow's plane whatever
-              this says. */}
-          {surface === 'top' && !w.on && <>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>On the top</div>
-            <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
-              {[{ k: 'hug', label: 'Hug the cake' }, { k: 'stand', label: 'Stand up' }].map(o => (
-                <button key={o.k} onClick={() => setWriting({ topPose: o.k })}
-                  style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
-                    background: writingTopPose(w) === o.k ? INK : 'transparent',
-                    color: writingTopPose(w) === o.k ? '#fff' : INK }}>
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          </>}
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <ColorWheel color={w.color ?? FONDANT_WRITING_COLOR} onChange={c => setWriting({ color: c })}
-              cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== (w.color ?? FONDANT_WRITING_COLOR).toLowerCase())}
-              width={152} />
-          </div>
+        {head && <div style={headStyle(8)}>Colour</div>}
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <ColorWheel color={w.color ?? FONDANT_WRITING_COLOR} onChange={c => setWriting({ color: c })}
+            cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== (w.color ?? FONDANT_WRITING_COLOR).toLowerCase())}
+            width={152} />
+        </div>
+        {/* ⚠️ LUSTRE, NOT A MIRROR, AND THAT DISTINCTION IS THE WHOLE CONTROL. Sandeep asked for
+            the Looks to carry the same controls, and fondant had no metal at all. But acrylic's
+            Gold is a MATCAP — a baked mirror — and he already rejected exactly that on paste:
+            *"it looks more like acrylic, can we have the fondant texture for the letters."* What a
+            baker actually does is brush edible lustre dust onto the paste, so this keeps the
+            fondant surface and makes the colour SHIMMER, the same toggle piped cream carries.
+            Asked and answered before building: *"Edible lustre — shimmer, not mirror."* */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+          <Chip on={!!w.metallic} onClick={() => setWriting({ metallic: !w.metallic })} label="Metallic" />
+        </label>
         </>}
+      </>
+    );
 
-{/* ⚠️ CREAM ONLY. Colour/Gold/Silver tint piped icing; an acrylic finish is a MATERIAL chosen
-            above, and showing both put two colour controls on one card where only one did anything. */}
+    /* ⚠️ CREAM ONLY. Colour/Gold/Silver tint piped icing; an acrylic finish is a MATERIAL chosen
+        above, and showing both put two colour controls on one card where only one did anything. */
+    const creamColourBlock = (head) => (
+      <>
         {!writingIsCut(w.style) && <>
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
+        {head && <div style={headStyle(8)}>Colour</div>}
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexShrink: 0, padding: '2px 0' }}>
           {[
             { k: 'colour', label: 'Colour',
@@ -15397,11 +15576,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onClick: () => { setWriting({ finish: 'cream' }); setWritingColorOpen(o => !o); } },
             { k: 'gold', label: 'Gold',
               ring: w.finish === 'gold',
-              swatch: 'linear-gradient(135deg,#f7e29a 0%,#caa12f 45%,#8a6b14 100%)',
+              swatch: CREAM_GOLD_SWATCH,
               onClick: () => { setWriting({ finish: 'gold' }); setWritingColorOpen(false); } },
             { k: 'silver', label: 'Silver',
               ring: w.finish === 'silver',
-              swatch: 'linear-gradient(135deg,#fbfcfd 0%,#c2c8cf 45%,#8b9097 100%)',
+              swatch: CREAM_SILVER_SWATCH,
               onClick: () => { setWriting({ finish: 'silver' }); setWritingColorOpen(false); } },
           ].map(c => (
             <button key={c.k} onClick={c.onClick} title={c.label}
@@ -15418,179 +15597,345 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <WritingColourPicker writing={w} design={design} setWriting={setWriting} width={152} />
         )}
         </>}
+      </>
+    );
 
-        {/* ⚠️ CREAM ONLY. "Draw" is a gesture you make against the cake with a pen; an acrylic
-            topper is a cut sheet that is placed, never drawn, so on a topper these two buttons named
-            a mode that did not exist and did nothing when pressed. Reported as exactly that: "not
-            sure what are intended for". The row itself is renderPenModeRow — shared with the pen
-            card, which is where hand-piping happens. */}
-        {!writingIsCut(w.style) && renderPenModeRow()}
+    /* ⚠️ CREAM ONLY. "Draw" is a gesture you make against the cake with a pen; an acrylic
+        topper is a cut sheet that is placed, never drawn, so on a topper these two buttons named
+        a mode that did not exist and did nothing when pressed. Reported as exactly that: "not
+        sure what are intended for". The row itself is renderPenModeRow — shared with the pen
+        card, which is where hand-piping happens.
+        ⚠️ IT STAYS AT THE ROOT ON A PHONE, NOT BEHIND A LEVEL. It changes what the NEXT TAP ON THE
+        CAKE means, so hiding it would leave a baker in Draw mode with nothing on screen saying so
+        — the control and its effect have to be visible together (INVARIANTS #11). */
+    const penRow = !writingIsCut(w.style) ? renderPenModeRow() : null;
 
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
-        {/* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic it
-            is the SHEET: 3mm standing so the piece holds itself up and pushes into the icing, thinner
-            lying flat so the cut edge does not read as bent rod. Two authored defaults, per pose, set
-            in ACRYLIC_DEFAULTS and overlaid by an admin — not something a customer should be able to
-            drag. It also wrote `thickness` while the acrylic builder reads `sheet`, so it moved a
-            number nothing consumed. */}
-        {/* ⚠️ ONE ROW, FOUR GATES. This card's controls appear on different conditions — Thickness
-            and Spacing are cream-only, Curve needs cream AND a surface that is not the side, Line
-            gap needs cream AND a multi-line message, Rotate is hidden on the side, Size is always
-            there — so the row is built from a FILTERED LIST, the same shape the grass card uses for
-            its conditional Ring width and Band width. Each gate is kept exactly as it was: every
-            one of them encodes a real fact about the material, written down beside it.
-            ⚠️ SIZE AND ROTATE JOIN THE ROW. They were already dials, but in their own hand-rolled
-            flex with their own 8.5px caption — a SECOND dial presentation on the same card, which
-            is the drift this sweep exists to remove.
-            ⚠️ CURVE IS AN OffsetDial. It runs -1..+1 about a meaningful zero (flat), and SizeDial's
-            band tapers thin→thick to mean small→large; on a signed bend that taper is a lie.
-            ⚠️ EVERY FORMATTER SURVIVES. Curve says "flat" at 0, Spacing "normal", Line gap "1.40×",
-            Thickness three decimals — at SizeDial's default one decimal, Thickness (0.008–0.07)
-            would read "0.0" across its whole travel and Spacing "0.0" to "0.6". */}
+    /* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic it
+        is the SHEET: 3mm standing so the piece holds itself up and pushes into the icing, thinner
+        lying flat so the cut edge does not read as bent rod. Two authored defaults, per pose, set
+        in ACRYLIC_DEFAULTS and overlaid by an admin — not something a customer should be able to
+        drag. It also wrote `thickness` while the acrylic builder reads `sheet`, so it moved a
+        number nothing consumed. */
+    /* ⚠️ ONE ROW, FOUR GATES. This card's controls appear on different conditions — Thickness
+        and Spacing are cream-only, Curve needs cream AND a surface that is not the side, Line
+        gap needs cream AND a multi-line message, Rotate is hidden on the side, Size is always
+        there — so the row is built from a FILTERED LIST, the same shape the grass card uses for
+        its conditional Ring width and Band width. Each gate is kept exactly as it was: every
+        one of them encodes a real fact about the material, written down beside it.
+        ⚠️ SIZE AND ROTATE JOIN THE ROW. They were already dials, but in their own hand-rolled
+        flex with their own 8.5px caption — a SECOND dial presentation on the same card, which
+        is the drift this sweep exists to remove.
+        ⚠️ CURVE IS AN OffsetDial. It runs -1..+1 about a meaningful zero (flat), and SizeDial's
+        band tapers thin→thick to mean small→large; on a signed bend that taper is a lie.
+        ⚠️ EVERY FORMATTER SURVIVES. Curve says "flat" at 0, Spacing "normal", Line gap "1.40×",
+        Thickness three decimals — at SizeDial's default one decimal, Thickness (0.008–0.07)
+        would read "0.0" across its whole travel and Spacing "0.0" to "0.6".
+        ⚠️ AND THE LIST IS DECLARED BEFORE IT IS RENDERED, because the phone's nav row NAMES the
+        dials behind it. "i dont see the curve knob" was asked of this card, and a row that read
+        only "Size & shape" answers it no better than the scroll did — so the hint is the dial
+        names, taken from this same filtered array. It cannot go stale and it cannot disagree. */
+    const dials = [
+      /* Size is a proportion, so SizeDial's thin→thick taper is honest here — it is the
+         control this app already means by "how big". */
+      /* ⚠️ THE CEILING IS 2.5, NOT 0.95, AND `fit` IS NOT A PERCENTAGE OF THE CAKE.
+         It scales the BOX the message is laid into, and that box is measured differently on
+         each surface (`writingSurface`): the top gets a diameter, the side a face width, the
+         board `boardRadius * 0.9` — a RADIUS. So the same 0.95 spans most of a cake top and
+         barely half a board, and a message on the board could not be made big enough at all.
+         Reported on exactly that surface: *"size dialer shows only a max of 0.95. need to
+         increase."*
+         Raising the ceiling rather than redefining the board's box on purpose: `fit` is
+         stored on every saved design and every template, so changing what a number MEANS
+         would resize board messages on work that is already out there. A wider range changes
+         nothing that exists and lets the ones that need it grow. */
+      /* ⚠️ THE CEILING IS THE SMALLER OF WHAT AN ADMIN AUTHORED AND WHAT THE SURFACE CAN HOLD.
+         On the top the builder fills the width, so `fit` 1.0 is a block as wide as the cake and
+         its corners are outside the circle — see `writingMaxFit`. The authored max still wins
+         everywhere it is the tighter of the two, so a row is never overruled upward. */
+      { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style),
+        min: writingScale.min, max: writingMaxFit(surface, writingScale.max), step: writingScale.step,
+        fmt: v => v.toFixed(2), set: v => setWriting({ fit: v }) },
+      /* ⚠️ Rotate is SIGNED and centres on 0° — square to the cake. Its zero mark is the value
+         a baker most wants to get back to. */
+      ...(surface !== 'side' ? [
+        { k: 'Rotate', dial: 'offset', v: w.yaw ?? 0, min: -180, max: 180, step: 1,
+          fmt: v => `${v > 0 ? '+' : ''}${Math.round(v)}°`, set: v => setWriting({ yaw: v }) },
+      ] : []),
+      /* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic
+         it is the SHEET, seeded in ACRYLIC_DEFAULTS and overlaid by an admin — not something a
+         customer should drag. It also wrote `thickness` while the acrylic builder reads
+         `sheet`, so it moved a number nothing consumed. */
+      /* ── The same control, the same name, a different number underneath ────────────────
+         ⚠️ EVERY LOOK NOW CARRIES THICKNESS, SPACING AND LINE GAP. Sandeep: *"piping, acrylic
+         and fondant options vary a lot in terms of controls … can you make all of them have
+         controls?"* They always meant something for a cut word — the cut builder reads
+         `sheet`, `tracking` and `lineGap` already — they were simply never offered, so a
+         customer typing their own message got whatever the row said and could not change it.
+         ⚠️ AND THE FIELD DIFFERS BY MATERIAL, WHICH IS WHY THIS IS TWO BRANCHES AND NOT ONE
+         WIDENED GATE. On cream Thickness is the NOZZLE's bead; on a cut word it is the SHEET
+         the letters come out of. Writing one field for both is the exact bug this card
+         already carried once — it wrote `thickness` while the cut builder read `sheet`, so
+         the dial moved a number nothing consumed.
+         ⚠️ NOTHING HERE DISTURBS AN EXISTING TEMPLATE. Each reads `w.<field> ?? <the default
+         the renderer already used>`, so a saved design that never set one renders exactly as
+         it did — the value only exists once a baker moves the dial. */
+      ...(writingIsCut(w.style) ? [
+        { k: 'Thickness', dial: 'size',
+          v: w.sheet ?? (cutStanding ? ACRYLIC_DEFAULTS.sheetStand : ACRYLIC_DEFAULTS.sheetFlat),
+          min: 0.015, max: 0.1, step: 0.005,
+          fmt: v => `${(v * NOMINAL_MM_PER_UNIT).toFixed(1)}mm`,
+          set: v => setWriting({ sheet: v }) },
+        /* ⚠️ LOOSER ONLY, AND THE FLOOR IS THE FACE'S OWN VALUE. `topperFaces.js` records what
+           tightening costs: chasing zero bridges welded a Parisienne topper into "Bithday":
+           correct by every measure and unreadable. Those per-face numbers are a legibility
+           and cuttability calibration, not a taste, so the dial starts there and only opens
+           up. Loosening adds bridges on acrylic and costs fondant nothing at all, since
+           fondant letters are cut one at a time and never needed to hold together. */
+        { k: 'Spacing', dial: 'size', v: w.tracking ?? faceFit(w.font),
+          min: faceFit(w.font), max: faceFit(w.font) + 0.3, step: 0.02,
+          fmt: v => (Math.abs(v - faceFit(w.font)) < 1e-6 ? 'normal'
+                                                          : `+${Math.round((v - faceFit(w.font)) * 100)}%`),
+          set: v => setWriting({ tracking: v }) },
+        ...(isMultiline ? [
+          { k: 'Line gap', dial: 'size', v: w.lineGap ?? ACRYLIC_DEFAULTS.lineGap,
+            min: 1, max: 2.2, step: 0.05,
+            fmt: v => `${v.toFixed(2)}×`, set: v => setWriting({ lineGap: v }) },
+        ] : []),
+      ] : []),
+      ...(!writingIsCut(w.style) ? [
+        { k: 'Thickness', dial: 'size', v: w.thickness ?? 0.03, min: 0.008, max: 0.07, step: 0.002,
+          fmt: v => v.toFixed(3), set: v => setWriting({ thickness: v }) },
+        /* ⚠️ CREAM ONLY, and NOT simply mis-wired — do not "fix" this by pointing it at
+           `tracking`. On acrylic the equivalent number is negative by design: the letters have
+           to overlap so the word cuts as one piece. It is calibrated PER FACE, by eye, and
+           topperFaces.js records what happens when it is not — chasing zero bridges gave a
+           Parisienne topper reading "Bithday", correct by every measure and unreadable. That
+           is a legibility-and-cuttability value, not a taste. */
+        { k: 'Spacing', dial: 'size', v: w.letterSpacing ?? 0, min: 0, max: 0.6, step: 0.02,
+          fmt: v => (v === 0 ? 'normal' : `+${Math.round(v * 100)}%`),
+          set: v => setWriting({ letterSpacing: v }) },
+      ] : []),
+      /* ── Standing up: the legs a topper is pushed in on ──────────────────────────────────
+         ⚠️ AUTHORED IN THE STUDIO, READ BY THE RENDERER, AND REACHABLE BY NOBODY IN BETWEEN.
+         The Acrylic Topper Studio has offered Base bar, Legs, leg length and buried since it
+         was built; `acrylicCfg` reads every one of them. The Texts card filtered the whole
+         Adjust row down to Size and Rotate for acrylic, so a customer typing their own
+         message got whatever the defaults said and could not change it. Sandeep: *"we have
+         actually done a poc in admin to hav 1 leg or 2 legs. some of those settings are
+         missing when we merged that in to the texts."*
+
+         ⚠️ STANDING ONLY, WHICH IS THE POSE AND NOT THE ZONE. `acrylicCfg` already returns
+         `legs: 0` for a flat piece — a plaque against a wall has nothing to push into and
+         prongs would point at the customer. Offering the dial there would move a number the
+         builder discards, which is the "picker that visibly does nothing" this file warns
+         about elsewhere.
+
+         These three and no more. Bridge and the sheet thickness are cuttability, calibrated
+         per face against a cutter's minimum detail — topperFaces.js records a Parisienne
+         topper reading "Bithday", correct by every measure and unreadable. That is not a
+         taste, and a customer dragging it would be dragging a manufacturing tolerance. */
+      /* ⚠️ LEGS ARE ACRYLIC'S, NOT "every cut Look's". They are the prongs that hold a perspex
+         word up, and they come with a baseline bar and bridge stems — all three are what
+         cutting a word from ONE sheet costs you, not decisions about lettering. Fondant is cut
+         letter by letter and laid on by hand, so it has none of them and a standing fondant
+         word rests on its own baseline. Sandeep: "for fondant, some acrylic options are
+         appearing. like legs and the bridge line. these options should not be available for
+         fondant."
+         ⚠️ READ FROM `CUT_ASSEMBLY`, the same table the BUILDER reads, so the control and the
+         geometry cannot disagree about what a material has. My first version gated this on the
+         pose — legs for a standing fondant word — which still offered a prong count the build
+         had no use for. */
+      ...(writingIsCut(w.style) && surface !== 'side' && cutAssembly(w.style).legs ? [
+        { k: 'Legs', dial: 'size', v: w.legs ?? ACRYLIC_DEFAULTS.legs, min: 0, max: 4, step: 1,
+          fmt: v => (Math.round(v) === 0 ? 'none' : `${Math.round(v)}`),
+          set: v => setWriting({ legs: Math.round(v) }) },
+        ...((w.legs ?? ACRYLIC_DEFAULTS.legs) > 0 ? [
+          { k: 'Leg length', dial: 'size', v: w.legLen ?? ACRYLIC_DEFAULTS.legLen,
+            min: 0.15, max: 0.9, step: 0.02, fmt: v => v.toFixed(2),
+            set: v => setWriting({ legLen: v }) },
+          /* How far the legs go IN. Not a manufacturing number despite looking like one: it
+             decides how high the word rides above the icing, which is the whole reason a
+             baker reaches for a longer leg. Bounded by the leg itself in the builder, so a
+             word can never be buried past its own prongs. */
+          { k: 'Buried', dial: 'size', v: w.bury ?? ACRYLIC_DEFAULTS.bury,
+            min: 0, max: 0.9, step: 0.01, fmt: v => `${Math.round(v * 100)}%`,
+            set: v => setWriting({ bury: v }) },
+        ] : []),
+      ] : []),
+      /* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
+         from a sheet; bending the baseline is a piped-writing idea.
+         ⚠️ AND A HOSTED MESSAGE HAS NO CURVE OF ITS OWN EITHER. Written on an element, the
+         bend IS that element's shape — `writingSurface` takes it from the host and the dial's
+         value is never read. A control that cannot change anything is worse than no control
+         (INVARIANTS #11), so it goes rather than sitting there doing nothing. */
+      /* ⚠️ CREAM AND FONDANT, NEVER ACRYLIC. Fondant is the one cut material that can follow
+         a curve — the letters are laid along it one at a time, which is `arcLetter` turning
+         each glyph rather than `warpArc` bending a stroke. A perspex topper is cut from one
+         sheet in one piece and cannot: *"acrylic wont bend like arch. so we dont need acrylic
+         bend."* Offering it there would be a dial that shows a shape the cutter cannot make. */
+      ...(surface !== 'side' && writingBends(w.style) && !w.on ? [
+        { k: 'Curve', dial: 'offset', v: w.curve ?? 0, min: -1, max: 1, step: 0.05,
+          fmt: v => (v === 0 ? 'flat' : `${Math.round(v * 100)}%`), set: v => setWriting({ curve: v }) },
+      ] : []),
+      /* Same again: acrylic reads `lineGap`, this writes `lineSpacing`, and on a topper the
+         rows nest until they meet rather than sitting on a baseline — bounded by the shapes,
+         not by taste. Cream only until someone decides what a customer may do to it. */
+      ...(isMultiline && !writingIsCut(w.style) ? [
+        { k: 'Line gap', dial: 'size', v: w.lineSpacing ?? 1.4, min: 1, max: 2.2, step: 0.05,
+          fmt: v => `${v.toFixed(2)}×`, set: v => setWriting({ lineSpacing: v }) },
+      ] : []),
+    ];
+
+    const adjustBlock = (head) => (
+      <>
+        {head && <div style={headStyle(8, 6)}>Adjust</div>}
         <ScrollFadeRow style={s.previewRow} fade="255,255,255">
-          {[
-            /* Size is a proportion, so SizeDial's thin→thick taper is honest here — it is the
-               control this app already means by "how big". */
-            /* ⚠️ THE CEILING IS 2.5, NOT 0.95, AND `fit` IS NOT A PERCENTAGE OF THE CAKE.
-               It scales the BOX the message is laid into, and that box is measured differently on
-               each surface (`writingSurface`): the top gets a diameter, the side a face width, the
-               board `boardRadius * 0.9` — a RADIUS. So the same 0.95 spans most of a cake top and
-               barely half a board, and a message on the board could not be made big enough at all.
-               Reported on exactly that surface: *"size dialer shows only a max of 0.95. need to
-               increase."*
-               Raising the ceiling rather than redefining the board's box on purpose: `fit` is
-               stored on every saved design and every template, so changing what a number MEANS
-               would resize board messages on work that is already out there. A wider range changes
-               nothing that exists and lets the ones that need it grow. */
-            /* ⚠️ THE CEILING IS THE SMALLER OF WHAT AN ADMIN AUTHORED AND WHAT THE SURFACE CAN HOLD.
-               On the top the builder fills the width, so `fit` 1.0 is a block as wide as the cake and
-               its corners are outside the circle — see `writingMaxFit`. The authored max still wins
-               everywhere it is the tighter of the two, so a row is never overruled upward. */
-            { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style),
-              min: writingScale.min, max: writingMaxFit(surface, writingScale.max), step: writingScale.step,
-              fmt: v => v.toFixed(2), set: v => setWriting({ fit: v }) },
-            /* ⚠️ Rotate is SIGNED and centres on 0° — square to the cake. Its zero mark is the value
-               a baker most wants to get back to. */
-            ...(surface !== 'side' ? [
-              { k: 'Rotate', dial: 'offset', v: w.yaw ?? 0, min: -180, max: 180, step: 1,
-                fmt: v => `${v > 0 ? '+' : ''}${Math.round(v)}°`, set: v => setWriting({ yaw: v }) },
-            ] : []),
-            /* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic
-               it is the SHEET, seeded in ACRYLIC_DEFAULTS and overlaid by an admin — not something a
-               customer should drag. It also wrote `thickness` while the acrylic builder reads
-               `sheet`, so it moved a number nothing consumed. */
-            ...(!writingIsCut(w.style) ? [
-              { k: 'Thickness', dial: 'size', v: w.thickness ?? 0.03, min: 0.008, max: 0.07, step: 0.002,
-                fmt: v => v.toFixed(3), set: v => setWriting({ thickness: v }) },
-              /* ⚠️ CREAM ONLY, and NOT simply mis-wired — do not "fix" this by pointing it at
-                 `tracking`. On acrylic the equivalent number is negative by design: the letters have
-                 to overlap so the word cuts as one piece. It is calibrated PER FACE, by eye, and
-                 topperFaces.js records what happens when it is not — chasing zero bridges gave a
-                 Parisienne topper reading "Bithday", correct by every measure and unreadable. That
-                 is a legibility-and-cuttability value, not a taste. */
-              { k: 'Spacing', dial: 'size', v: w.letterSpacing ?? 0, min: 0, max: 0.6, step: 0.02,
-                fmt: v => (v === 0 ? 'normal' : `+${Math.round(v * 100)}%`),
-                set: v => setWriting({ letterSpacing: v }) },
-            ] : []),
-            /* ── Standing up: the legs a topper is pushed in on ──────────────────────────────────
-               ⚠️ AUTHORED IN THE STUDIO, READ BY THE RENDERER, AND REACHABLE BY NOBODY IN BETWEEN.
-               The Acrylic Topper Studio has offered Base bar, Legs, leg length and buried since it
-               was built; `acrylicCfg` reads every one of them. The Texts card filtered the whole
-               Adjust row down to Size and Rotate for acrylic, so a customer typing their own
-               message got whatever the defaults said and could not change it. Sandeep: *"we have
-               actually done a poc in admin to hav 1 leg or 2 legs. some of those settings are
-               missing when we merged that in to the texts."*
-
-               ⚠️ STANDING ONLY, WHICH IS THE POSE AND NOT THE ZONE. `acrylicCfg` already returns
-               `legs: 0` for a flat piece — a plaque against a wall has nothing to push into and
-               prongs would point at the customer. Offering the dial there would move a number the
-               builder discards, which is the "picker that visibly does nothing" this file warns
-               about elsewhere.
-
-               These three and no more. Bridge and the sheet thickness are cuttability, calibrated
-               per face against a cutter's minimum detail — topperFaces.js records a Parisienne
-               topper reading "Bithday", correct by every measure and unreadable. That is not a
-               taste, and a customer dragging it would be dragging a manufacturing tolerance. */
-            /* ⚠️ LEGS ARE ACRYLIC'S, NOT "every cut Look's". They are the prongs that hold a perspex
-               word up, and they come with a baseline bar and bridge stems — all three are what
-               cutting a word from ONE sheet costs you, not decisions about lettering. Fondant is cut
-               letter by letter and laid on by hand, so it has none of them and a standing fondant
-               word rests on its own baseline. Sandeep: "for fondant, some acrylic options are
-               appearing. like legs and the bridge line. these options should not be available for
-               fondant."
-               ⚠️ READ FROM `CUT_ASSEMBLY`, the same table the BUILDER reads, so the control and the
-               geometry cannot disagree about what a material has. My first version gated this on the
-               pose — legs for a standing fondant word — which still offered a prong count the build
-               had no use for. */
-            ...(writingIsCut(w.style) && surface !== 'side' && cutAssembly(w.style).legs ? [
-              { k: 'Legs', dial: 'size', v: w.legs ?? ACRYLIC_DEFAULTS.legs, min: 0, max: 4, step: 1,
-                fmt: v => (Math.round(v) === 0 ? 'none' : `${Math.round(v)}`),
-                set: v => setWriting({ legs: Math.round(v) }) },
-              ...((w.legs ?? ACRYLIC_DEFAULTS.legs) > 0 ? [
-                { k: 'Leg length', dial: 'size', v: w.legLen ?? ACRYLIC_DEFAULTS.legLen,
-                  min: 0.15, max: 0.9, step: 0.02, fmt: v => v.toFixed(2),
-                  set: v => setWriting({ legLen: v }) },
-                /* How far the legs go IN. Not a manufacturing number despite looking like one: it
-                   decides how high the word rides above the icing, which is the whole reason a
-                   baker reaches for a longer leg. Bounded by the leg itself in the builder, so a
-                   word can never be buried past its own prongs. */
-                { k: 'Buried', dial: 'size', v: w.bury ?? ACRYLIC_DEFAULTS.bury,
-                  min: 0, max: 0.9, step: 0.01, fmt: v => `${Math.round(v * 100)}%`,
-                  set: v => setWriting({ bury: v }) },
-              ] : []),
-            ] : []),
-            /* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
-               from a sheet; bending the baseline is a piped-writing idea.
-               ⚠️ AND A HOSTED MESSAGE HAS NO CURVE OF ITS OWN EITHER. Written on an element, the
-               bend IS that element's shape — `writingSurface` takes it from the host and the dial's
-               value is never read. A control that cannot change anything is worse than no control
-               (INVARIANTS #11), so it goes rather than sitting there doing nothing. */
-            ...(surface !== 'side' && !writingIsCut(w.style) && !w.on ? [
-              { k: 'Curve', dial: 'offset', v: w.curve ?? 0, min: -1, max: 1, step: 0.05,
-                fmt: v => (v === 0 ? 'flat' : `${Math.round(v * 100)}%`), set: v => setWriting({ curve: v }) },
-            ] : []),
-            /* Same again: acrylic reads `lineGap`, this writes `lineSpacing`, and on a topper the
-               rows nest until they meet rather than sitting on a baseline — bounded by the shapes,
-               not by taste. Cream only until someone decides what a customer may do to it. */
-            ...(isMultiline && !writingIsCut(w.style) ? [
-              { k: 'Line gap', dial: 'size', v: w.lineSpacing ?? 1.4, min: 1, max: 2.2, step: 0.05,
-                fmt: v => `${v.toFixed(2)}×`, set: v => setWriting({ lineSpacing: v }) },
-            ] : []),
-          ].map(d => (
+          {dials.map(d => (
             <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
               fmt={d.fmt} onChange={d.set} dial={d.dial} />
           ))}
         </ScrollFadeRow>
+      </>
+    );
 
-        {/* ⚠️ A HOSTED MESSAGE IS NOT DRAGGED, so it must not be told to drag. The three lines below
-            each name a cake surface; on a rainbow the element decides where the line sits, and a
-            hint that says otherwise is a label that lies. */}
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
-          {w.on ? (w.on.kind === 'rainbow'
-                    ? 'Moves with the rainbow — resize or move the rainbow and the message follows.'
-                    : 'Moves with the decoration — resize or move it and the message follows.')
-            : surface === 'side' ? 'Drag the writing around and up the cake side.'
-            : surface === 'board' ? 'Drag the writing around the cake board.'
-            : 'Drag the writing anywhere on the cake top.'}
-        </div>
+    /* ⚠️ A HOSTED MESSAGE IS NOT DRAGGED, so it must not be told to drag. The three lines below
+        each name a cake surface; on a rainbow the element decides where the line sits, and a
+        hint that says otherwise is a label that lies. */
+    const dragHint = (
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
+        {w.on ? (w.on.kind === 'rainbow'
+                  ? 'Moves with the rainbow — resize or move the rainbow and the message follows.'
+                  : 'Moves with the decoration — resize or move it and the message follows.')
+          : surface === 'side' ? 'Drag the writing around and up the cake side.'
+          : surface === 'board' ? 'Drag the writing around the cake board.'
+          : 'Drag the writing anywhere on the cake top.'}
+      </div>
+    );
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          {/* Recentre puts a dragged message back in the middle of its surface. A hosted one was
-              never anywhere else, so the button has nothing to undo (INVARIANTS #11). */}
-          {!w.on && (
-          <button onClick={() => setWriting(surface === 'side' ? { sideAngle: 0, sideY: undefined }
-              : surface === 'board' ? { boardX: undefined, boardZ: undefined }
-              : { offsetX: 0, offsetZ: 0 })}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${LINE}`, background: SURFACE,
-              color: INK, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-            Recentre
-          </button>
-          )}
-          <button onClick={() => { clearWriting(); clearAllSelections(); }}
-            style={{ ...s.deleteBtn, flex: 1 }}>
-            Remove from cake
-          </button>
+    const actionsRow = (
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        {/* Recentre puts a dragged message back in the middle of its surface. A hosted one was
+            never anywhere else, so the button has nothing to undo (INVARIANTS #11). */}
+        {!w.on && (
+        <button onClick={() => setWriting(surface === 'side' ? { sideAngle: 0, sideY: undefined }
+            : surface === 'board' ? { boardX: undefined, boardZ: undefined }
+            : { offsetX: 0, offsetZ: 0 })}
+          style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${LINE}`, background: SURFACE,
+            color: INK, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+          Recentre
+        </button>
+        )}
+        <button onClick={() => { clearWriting(); clearAllSelections(); }}
+          style={{ ...s.deleteBtn, flex: 1 }}>
+          Remove from cake
+        </button>
+      </div>
+    );
+
+    /* ── Desktop: one card, in the order it has always been in ───────────────────────────────────
+     * Levels are deliberately NOT brought here. `shared/panelTopBar.jsx` writes down why: on a
+     * desktop panel a back arrow "points backward in a stack that does not exist", and the rail is
+     * right there as the real way to change destination. The desktop card also has the height —
+     * this whole change is about a phone where it does not. */
+    if (!isMobile) return (
+      <>
+        {hostCaption}
+        {surfaceTabs}
+        {messageBox}
+        {lookBlock(true)}
+        {fontBlock(true)}
+        {finishBlock(true)}
+        {poseBlock(true)}
+        {fondantColourBlock(true)}
+        {creamColourBlock(true)}
+        {penRow}
+        {adjustBlock(true)}
+        {dragHint}
+        {actionsRow}
+      </>
+    );
+
+    /* ── A phone: the message at the root, everything else one tap down ──────────────────────────
+     * Reported with a screenshot of a real Android browser, keyboard up: *"this is texts element
+     * accessed in real mobile browser. it took almost all the space."* The card was ~1100px of
+     * single scroll against ~400px of visible sheet, so a baker typing a message could see the
+     * textarea, the Look row and the top of Font. Colour, Curve and Remove were below the keyboard.
+     *
+     * ⚠️ EVERY LEVEL IS A ROW AND EVERY ROW IS A LEVEL, FROM ONE TABLE. A level with no way in, or
+     * a row that opens nothing, is the failure mode of hand-written navigation — so the nav rows
+     * and the bodies are the same array, and a block's gate appears exactly once (`null` from the
+     * block means no row for it).
+     * ⚠️ AND THE ROW CARRIES THE CURRENT VALUE. A row that only says "Look" makes the baker open it
+     * to find out what the answer is; "Look — Fondant" is the same tap-target doing twice the work.
+     * ⚠️ NavRow, NOT A DIV WITH AN onClick (root CLAUDE.md rule 7). It is a real button, it reads as
+     * pressable at rest on a screen with no hover, and the chevron is the ONE shared chevron. */
+    const levels = [
+      /* Where it goes, and — on fondant's top — how it sits there. One question: both answers are
+         about the place, and putting the pose beside the surface tabs means changing the surface
+         shows the pose appearing or going away rather than hiding that fact a level up. */
+      !w.on && { key: 'where', label: 'Where it goes', value: SURFACE_LABELS[surface],
+                 body: <>{surfaceTabs}{poseBlock(true)}</> },
+      !w.lockLook && { key: 'look', label: 'Look',
+                       value: (WRITING_LOOKS[w.style ?? 'cream'] ?? WRITING_LOOKS.cream).label,
+                       body: lookBlock(false) },
+      { key: 'font', label: 'Font',
+        value: faces.find(f => f.key === (w.font ?? ''))?.label ?? 'Choose',
+        body: fontBlock(false) },
+      w.style === 'acrylic' && { key: 'finish', label: 'Finish',
+                                 value: TOPPER_FINISHES[w.acrylicFinish ?? 'gold']?.label ?? 'Gold',
+                                 body: finishBlock(false) },
+      /* The two colour blocks are one row: a message has a colour or it has a finish, never both
+         (acrylic's materials are chosen in Look's level), so the row's key is the same either way
+         and the body is whichever block this material actually has. */
+      w.style === 'fondant' && { key: 'colour', label: 'Colour',
+                                 value: <ColourDot fill={w.color ?? FONDANT_WRITING_COLOR} />,
+                                 body: fondantColourBlock(false) },
+      !writingIsCut(w.style) && { key: 'colour', label: 'Colour',
+        value: <ColourDot fill={w.finish === 'gold' ? CREAM_GOLD_SWATCH
+                           : w.finish === 'silver' ? CREAM_SILVER_SWATCH
+                           : (w.color ?? '#ffffff')} />,
+        /* Straight to the wheel. On desktop the picker folds out from the Colour swatch because it
+           shares the row with Gold and Silver; a level whose whole name is "Colour" has nothing to
+           fold away from, and an opened level showing three swatches and no wheel wastes the tap.
+           Gold and Silver still shut it, exactly as they do on desktop. */
+        onOpen: () => { if ((w.finish ?? 'cream') === 'cream') setWritingColorOpen(true); },
+        body: creamColourBlock(false) },
+      /* ⚠️ "Size & shape", AND THE HINT NAMES THE DIALS. Asked of this very card: *"i dont see the
+         curve knob — so is it under size and shape."* The dials are already a filtered list, so the
+         hint is that list's labels: it cannot name a dial this material does not have, and it
+         cannot miss one it does. */
+      { key: 'adjust', label: 'Size & shape', hint: dials.map(d => d.k).join(' · '),
+        value: (w.fit ?? writingFit(w.style)).toFixed(2),
+        body: adjustBlock(false) },
+    ].filter(Boolean);
+
+    /* A level whose gate has gone (switch Look to acrylic while standing in Colour) resolves to
+       nothing, and that resolves to the root — rather than a blank card with a back arrow. */
+    const here = levels.find(L => L.key === writingLevel) ?? null;
+    if (here) return (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0 4px' }}>
+          <PanelBackArrow onClick={() => setWritingLevel(null)} />
+          <span style={{ fontSize: 13.5, fontWeight: 800, color: INK }}>{here.label}</span>
         </div>
+        {here.body}
+      </>
+    );
+
+    return (
+      <>
+        {hostCaption}
+        {messageBox}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+          {levels.map(L => (
+            <NavRow key={L.key} label={L.label} hint={L.hint} value={L.value}
+              ariaLabel={`${L.label} — open`}
+              onClick={() => { L.onOpen?.(); setWritingLevel(L.key); }} />
+          ))}
+        </div>
+        {penRow}
+        {dragHint}
+        {actionsRow}
       </>
     );
   }
@@ -16754,16 +17099,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             style={{ width: 40, height: 28, border: '1px solid #D9D5CE', borderRadius: 6, padding: 0, cursor: 'pointer' }} />
         </div>
 
-        {/* Gated on the row like the balloon's, not hard-coded: admin's "deletable" tick was dead
-            config here. Unticking it is the only thing that takes this button away. */}
-        {instanceActions(cl.elementId).delete && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-            <button onClick={() => removeCloud(card.tierIndex, cl.id)}
-              style={{ ...s.deleteBtn, flex: 1 }}>
-              Remove from cake
-            </button>
-          </div>
-        )}
+        {/* Gated on the row like the balloon's, not hard-coded: admin's ticks were dead config here.
+            Unticking one is the only thing that takes its button away. */}
+        {(() => {
+          const act = instanceActions(cl.elementId);
+          if (!act.delete && !act.duplicate) return null;
+          return (
+            <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+              {act.duplicate && (
+                <button onClick={() => duplicateCloud(card.tierIndex, cl.id)}
+                  style={{ ...s.neutralBtn, flex: 1 }}>
+                  Duplicate
+                </button>
+              )}
+              {act.delete && (
+                <button onClick={() => removeCloud(card.tierIndex, cl.id)}
+                  style={{ ...s.deleteBtn, flex: 1 }}>
+                  Remove from cake
+                </button>
+              )}
+            </div>
+          );
+        })()}
       </>
     );
   }
@@ -23753,7 +24110,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           character={Appu}
           isMobile={isMobile}
           bottomInset={isMobile ? MOBILE_BAR_H : 0}
-          hidden={onFilmGround}
+          /* ⚠️ AND HE STEPS ASIDE FOR A DOCKED EDITING SHEET ON A PHONE. He sits bottom-right of
+             the screen; a phone's card is docked to the bottom of the same screen, so he lands ON
+             TOP of its controls — reported from a real Android browser with Appu over the Texts
+             card's "Fondant" chip. `editingOnPhone` is already the "a sheet is docked on a phone"
+             flag, and while one is he is unreachable anyway: the sheet has the taps. */
+          hidden={onFilmGround || editingOnPhone}
         />
       )}
 
@@ -24040,6 +24402,13 @@ const s = {
     position: 'relative', overflow: 'visible',
     display: 'flex', flexShrink: 0, flex: 1,
     minHeight: 0,             // see sidebarNav — the rail must be allowed to shrink, not grow
+    /* ⚠️ AND NOW IT IS ALSO STOPPED FROM GROWING. `flex: 1` alone made the rail the window's
+       height, which is right up to a point and wrong past it — see RAIL_MAX_H for the number and
+       why a stretched handle stops reading as a spatula. The slack it used to absorb showed up as
+       one hole between the last nav item and Chef's Desk, because the gap between items is capped
+       and the bottom group is pinned to the blade. */
+    maxHeight: RAIL_MAX_H,
+    alignSelf: 'flex-start',  // anchored at the top once capped, rather than floating mid-column
   },
   sidebarInner: {
     position: 'relative', zIndex: 1,

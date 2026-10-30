@@ -25,6 +25,11 @@ dist
 # tree. Found exactly that way, twice. Ignoring the pattern is the fix; deleting the file is not,
 # because it belongs to whoever is still using it.
 *.tmp.mjs
+# ⚠️ AND THE DOT-PREFIXED ONES, which is the same probe under a name the pattern above does not
+# catch (`dev/.measure-oo.mjs`). Third time this has blocked a release; the convention above is not
+# enforced anywhere, so the ignore has to cover how people actually name a throwaway rather than how
+# they were asked to. Still ignoring rather than deleting — it belongs to whoever is still using it.
+dev/.*.mjs
 
 
 # A reference cake photo for dev/edible-prints.html. A real one is a CUSTOMER'S, and a fixture is
