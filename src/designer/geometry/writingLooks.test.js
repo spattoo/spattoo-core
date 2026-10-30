@@ -56,7 +56,14 @@ describe('no control is left asking "is it acrylic"', () => {
   it('the card branches on cut, not on the acrylic name', () => {
     expect(designer).not.toMatch(/w\.style !== 'acrylic'/);
     expect(designer).toMatch(/!writingIsCut\(w\.style\)/);
-    expect(designer).toMatch(/items=\{\(writingIsCut\(w\.style\)/);
+    /* ⚠️ THE FONT LIST IS NAMED NOW, AND THE PIN FOLLOWED IT. This used to read
+       `items={(writingIsCut(w.style) ? TOPPER_FACES : CREAM_FONTS)…}` inline on the Segmented. The
+       phone's nav row has to show the CHOSEN face's label, so the same list has to be readable
+       twice — and the answer to "two readers" is one `const`, not the expression written out again
+       (root CLAUDE.md rule 1). The fact being pinned is unchanged: which list of faces a message is
+       offered is decided by `cut`, never by the acrylic name. */
+    expect(designer).toMatch(/const faces = writingIsCut\(w\.style\)/);
+    expect(designer).toMatch(/items=\{faces\.map\(/);
   });
 
   /* The FINISH block is the one thing that genuinely IS acrylic-only: mirror gold is a material, and

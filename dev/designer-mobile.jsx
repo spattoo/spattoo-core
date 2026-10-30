@@ -820,7 +820,14 @@ CAT_ELEMENTS.push({
  * what is worth looking at. */
 CAT_ELEMENTS.push({
   id: 'e22', name: 'Piped message', description: 'a message piped in cream',
-  element_type_id: 'et-piping', category_id: 'cat-1',
+  /* ⚠️ `et-topper`, AND IT USED TO SAY `et-piping` — which is why this row never once opened the
+     card it was written to reach. A piping-typed tile goes down the ring/layer path, so tapping it
+     gave a pending CREAM PLACEMENT (a colour wheel, two dials and a ✓) and `addWritingFromRow` was
+     never called; `procedural: 'writing'` below was read by nobody. Measured 2026-10-29 while
+     checking the Texts card on a phone: with `et-piping` the writing card has no textarea at all,
+     with `et-topper` it opens on DEFAULT_WRITING's cream. A fixture that cannot reach the screen
+     it names certifies nothing — the same trap the `scale` note three lines down records. */
+  element_type_id: 'et-topper', category_id: 'cat-1',
   image_url: CAT_THUMB('#f6e7d8'), thumbnail_url: CAT_THUMB('#f6e7d8'), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
   allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
