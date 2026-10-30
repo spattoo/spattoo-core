@@ -53,7 +53,8 @@
     "check:tokens": "node scripts/check-tokens.mjs",
     "check:forwarded-props": "node scripts/check-forwarded-props.mjs",
     "check:conditional-hooks": "node scripts/check-conditional-hooks.mjs",
-    "check:zones-from-config": "node scripts/check-zones-from-config.mjs"
+    "check:zones-from-config": "node scripts/check-zones-from-config.mjs",
+    "measure:template": "node scripts/measure-template-load.mjs"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",
