@@ -69,6 +69,13 @@ function mark(name) {
 
 function Rig() {
   const [mounted, setMounted] = useState(false);
+  /* ⚠️ A RE-RENDER WITH NOTHING ELSE CHANGED. The whole question about a stuck loading boundary is
+     whether the asset is still coming or whether it arrived and React never retried — and a
+     viewport resize cannot tell them apart, because it changes layout, camera and canvas size all
+     at once. This changes NOTHING except that React renders again. If the spinner clears on this,
+     the network was never involved. */
+  const [, forceRender] = useState(0);
+  useEffect(() => { window.__forceRender = () => forceRender(n => n + 1); }, []);
   /* ⚠️ THE LIVE CANVAS, NOT CakePreview. They share CakeContent (INVARIANTS #2) so they draw the
      same cake, but CakePreview mounts it under SceneKindContext 'thumb' — one <Suspense
      fallback={null}> instead of a per-element LoadingPing, and the capture channel never calls the

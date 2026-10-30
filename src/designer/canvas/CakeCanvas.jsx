@@ -14,6 +14,7 @@ import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import textFont from './fonts/NotoSans-Regular.woff?inline';
 import CakeTier from './CakeTier';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
+import { useFlushPendingBoundaries } from './loadingRegistry.js';
 import { SafeEnvironment } from './safeEnvironment.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
 import { baseColourOf, wallTilt } from '../studioBackdrop.js';
@@ -6785,6 +6786,15 @@ export default function CakeCanvas({
   brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
   sprinkleHand = null, onSprinklePlace,
 }) {
+  /* ⚠️ HERE, AND IN THIS COMPONENT RATHER THAN DEEPER. A Suspense boundary inside the <Canvas>
+     lives in R3F's own React root, and a resolved asset does not reliably give that root work to
+     do — so the boundary keeps showing its fallback after every byte has arrived, the decoration
+     is never drawn, and the spinner stays up until something unrelated re-renders the tree. This
+     re-renders while anything is pending, which is what retries it. It has to be CakeCanvas: a
+     fallback re-rendering itself does not retry its own boundary, and a wrapper that re-renders
+     `{children}` is bailed out of when the child elements are referentially unchanged. See
+     useFlushPendingBoundaries for the measurements and for why this is a mitigation, not the cause. */
+  useFlushPendingBoundaries();
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
   const cameraRef   = useRef(null);
