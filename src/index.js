@@ -1,13 +1,25 @@
 export { default as CakeDesigner } from './designer/CakeDesigner.jsx';
 export { default as PatternBuilder } from './designer/PatternBuilder.jsx';
 export { default as PatternBuilderCanvas, placementPosition, getOverlappingIds, ALL_TIER_GEOM } from './designer/canvas/PatternBuilderCanvas.jsx';
-export { default as CakeCanvas, CakeThumbnailCanvas, CakePreview } from './designer/canvas/CakeCanvas.jsx';
+export { default as CakeCanvas, CakeThumbnailCanvas, CakePreview, boardOf } from './designer/canvas/CakeCanvas.jsx';
 // One catalogue element on a cake, placed by the designer's OWN addSticker and drawn by its own
 // scene — so the admin preview is a mount of the designer, not a second renderer that drifts.
 // `zoneMode` rides along because a caller choosing a zone must resolve the element's mode the same
 // way the designer does.
 export { default as ElementPreview } from './designer/preview/ElementPreview.jsx';
 export { zoneMode, zoneCfg, zoneSeat, zoneInsert } from './designer/placement.js';
+
+/* ── Building a cake from a composed spec ────────────────────────────────────────────────────────
+ * Exported so admin's Cake Idea Studio IMPORTS the planner rather than carrying a copy of it —
+ * root CLAUDE.md: "THE STUDIO IMPORTS THE GEOMETRY, IT DOES NOT CARRY A COPY OF IT". A second
+ * implementation of "where does this piece go" would disagree with the designer the first time a
+ * baker moved anything, which is the whole reason `seatOnSlot` was lifted out of CakeDesigner. */
+export { planFromSpec } from './designer/idea/planFromSpec.js';
+export { validateSpec, normaliseSpec, SPEC_VERSION, SPEC_ZONES, PROMINENCE } from './designer/idea/cakeSpec.js';
+/* The seat and the three values it needs, so a host can assemble its context the same way the
+   placement chooser does — `boardOf` lives in the canvas, which is why it cannot import them. */
+export { seatOnSlot, placementSlots, scaleRangeOf } from './designer/placement.js';
+export { boardRingClamp } from './designer/geometry/surface.js';
 // The shape picker's camera and its capture helper. Exported because the Cake Shape Studio SAVES a
 // thumbnail through this exact view and the picker falls back to a live tile through it — one camera, or
 // a shape would change appearance the moment somebody photographed it. captureThumbnailBlob is the ONE
@@ -73,7 +85,7 @@ export { default as AuthGate } from './auth/AuthGate.jsx';
 export { default as HelpAssistant } from './shared/HelpAssistant.jsx';
 export { default as Appu } from './shared/Appu.jsx';
 export { default as HelpMarkdown } from './shared/helpMarkdown.jsx';
-export { useCakeDesign, toCanvasConfig, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
+export { useCakeDesign, toCanvasConfig, tierShapeAt, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
 export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer/constants.js';
 // The cake's DEFAULT dimensions — the sizes core actually ships. Exported so a studio can start from
 // the real cake instead of inventing numbers to tune against.
