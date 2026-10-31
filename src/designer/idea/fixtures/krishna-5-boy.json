@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "brief": { "subject": "krishna", "ages": [5], "gender": "boys" },
+  "cake": {
+    "shape": "round",
+    "tiers": [{ "color": "#2E6FD9" }],
+    "weightKg": 1.5
+  },
+  "message": { "text": "Happy 5th Birthday", "look": "fondant", "surface": "top", "color": "#FFD233" },
+  "age": { "number": 5 },
+  "elements": [
+    { "elementId": "el-bansuri",  "zone": "top_surface", "count": 1, "prominence": "hero" },
+    { "elementId": "el-feather",  "zone": "side",        "count": 3, "prominence": "accent" },
+    { "elementId": "el-matki",    "zone": "board",       "count": 1, "prominence": "feature" },
+    { "elementId": "el-retired",  "zone": "top_surface", "count": 1, "prominence": "accent" },
+    { "elementId": "el-bansuri",  "zone": "board",       "count": 1, "prominence": "accent" }
+  ],
+  "palette": ["#2E6FD9", "#FFD233", "#1E8449"],
+  "wanted": ["a cow", "a swing"],
+  "why": "Krishna is shown blue with a yellow dhoti; the flute, the peacock feather and the butter pot are the look."
+}
