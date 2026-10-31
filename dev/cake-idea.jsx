@@ -32,8 +32,16 @@ import KRISHNA from '../src/designer/idea/fixtures/krishna-5-boy.json';
  * data because `boardOf` lives in the canvas; both callers therefore have to hand it the same three
  * things, and this harness is the second caller that proves the first one's shape was right.
  *
- * Open /cake-idea.html. `?spec=` takes a URL to any spec JSON, so a composer's output can be
- * dropped in without touching this file.
+ * Open /cake-idea.html.
+ *
+ * ⚠️ `?bundle=` TAKES A SPEC **AND THE ROWS IT NAMES**, and that pairing is the whole reason a real
+ * composed spec can be looked at here at all. A spec carries element IDS; this harness has no API,
+ * no session and no catalogue, so on its own it would drop every id as "not in this baker's
+ * library" — which is exactly what my first claim that `?spec=` was enough would have done. The
+ * composer has already fetched those rows to build its prompt, so it emits both:
+ *     { spec, elements: [ …the rows the spec names… ] }
+ * `spattoo-backend/scripts/compose-idea.mjs --out` writes one. `?spec=` still works for a
+ * hand-written spec against the stand-in library below.
  */
 
 /* A stand-in catalogue. These are the Krishna assets generated on 2026-10-25, which are not in the
@@ -62,27 +70,59 @@ const LIBRARY = [
     placement_config: {} },
 ];
 
+/* ⚠️ THE CDN, THROUGH VITE'S PROXY, OR THE CAKE IS EMPTY. A bundle carries absolute R2 URLs —
+   correct everywhere except here, because the CDN's CORS allowlist holds the APP's origins, not a
+   harness on :5190. The files fetch fine with curl and fail in the browser, and three.js swallows
+   the failure: the first real render showed a bare cake with fourteen invisible decorations on it
+   and nothing in the panel to say why. `vite.config.js` already proxies `/cdn` for exactly this
+   reason — it says so at length about the HDRI, which was reported and written into the docs three
+   times against the wrong environment before anyone noticed. Same trap, same fix.
+   Dev-only, and in the harness rather than in the composer: the bundle is right, this origin is
+   the odd one out. */
+const viaProxy = (row) => {
+  const swap = (u) => (typeof u === 'string'
+    ? u.replace(/^https?:\/\/[^/]*(r2\.dev|spattoocdn\.com)/i, '/cdn')
+    : u);
+  return { ...row, image_url: swap(row.image_url), thumbnail_url: swap(row.thumbnail_url) };
+};
+
 function Harness() {
   const api = useCakeDesign();
   const apiRef = useRef(api);
   apiRef.current = api;
 
-  const [spec, setSpec] = useState(KRISHNA);
+  /* ⚠️ A URL PARAM MEANS "WAIT", NOT "BUILD THE DEFAULT AND THEN THIS". The first version seeded
+     the built-in fixture, built it, and then built the fetched bundle on top of the SAME design —
+     two cakes superimposed, two messages, and a parts list that looked plausible. Every eval
+     render would have been wrong in a way that reads as a bad idea rather than a bad harness. */
+  const q = typeof location === 'undefined' ? null : new URLSearchParams(location.search);
+  const fromUrl = q?.get('bundle') || q?.get('spec') || null;
+  const [spec, setSpec] = useState(fromUrl ? null : KRISHNA);
+  const [library, setLibrary] = useState(LIBRARY);
   const [built, setBuilt] = useState(null);
+  const [failed, setFailed] = useState(null);
   const done = useRef(false);
 
-  /* `?spec=` so a composer's output can be looked at without editing this file — the whole claim of
-     the contract is that the source of a spec does not matter. */
+  /* A bundle brings its own catalogue; a bare spec leans on the stand-ins above. Both exist
+     because they answer different questions — "does a composed cake build" and "does the planner
+     do the right thing with a case I typed". */
   useEffect(() => {
-    const url = new URLSearchParams(location.search).get('spec');
-    if (!url) return;
-    fetch(url).then(r => r.json()).then(s => { done.current = false; setSpec(s); }).catch(() => {});
+    if (!fromUrl) return;
+    const isBundle = !!q?.get('bundle');
+    fetch(fromUrl).then(r => r.json()).then(j => {
+      if (isBundle) { setSpec(j.spec ?? j); setLibrary((j.elements ?? LIBRARY).map(viaProxy)); }
+      else setSpec(j);
+    }).catch(e => setFailed(String(e)));
   }, []);
 
-  const check = useMemo(() => validateSpec(spec), [spec]);
+  const check = useMemo(() => (spec ? validateSpec(spec) : { ok: false, problems: [] }), [spec]);
 
   useEffect(() => {
-    if (done.current || !check.ok) return;
+    /* ⚠️ A REFUSED SPEC MUST CLEAR THE LAST ONE. Without this the panel kept showing the previous
+       cake's parts beside the new one's error — which reads as "it built, with a warning" when
+       nothing was built at all. The most misleading state a prototype can be in. */
+    if (!check.ok) { setBuilt(null); return; }
+    if (done.current) return;
     done.current = true;
     const a = apiRef.current;
 
@@ -97,7 +137,7 @@ function Harness() {
       board: a.design.tiers[0] ? boardOf((a.canvasConfig?.tiers ?? a.design.tiers)[0]) : null,
     });
 
-    const plan = planFromSpec(spec, { elements: LIBRARY, seatCtxFor });
+    const plan = planFromSpec(spec, { elements: library, seatCtxFor });
 
     plan.tiers.forEach(t => { if (t.color) a.setTierColor(t.index, t.color); });
 
@@ -110,7 +150,7 @@ function Harness() {
        single time a cake is COMPOSED. Worked around here rather than changed in the hook: that is
        shared state and a wider change than this step. Worth a real fix before the applier ships. */
     plan.placements.forEach((p, i) => {
-      const el = LIBRARY.find(e => e.id === p.elementId);
+      const el = library.find(e => e.id === p.elementId);
       a.addSticker(el, p.zone, p.tierIndex, p.placementMode, p.position, { id: Date.now() + i });
     });
 
@@ -125,7 +165,11 @@ function Harness() {
     if (plan.age) a.addAge({ value: plan.age.number });
 
     setBuilt(plan);
-  }, [spec, check.ok]);
+    /* ⚠️ A FLAG ON THE DOCUMENT, FOR THE SCREENSHOT RIG. Twenty cakes rendered on a fixed timeout
+       is twenty chances to photograph a half-loaded scene, and a contact sheet of those teaches
+       the wrong thing about the ideas. The rig waits for this instead. */
+    requestAnimationFrame(() => { document.body.dataset.ideaBuilt = String(plan.placements.length); });
+  }, [spec, library, check.ok]);
 
   const C = { ink: '#EDEAE3', dim: 'rgba(237,234,227,0.55)', sage: '#6B8F7E', warn: '#D9A441' };
 
@@ -140,6 +184,7 @@ function Harness() {
         <p style={{ color: C.sage, letterSpacing: '0.18em', textTransform: 'uppercase',
                     fontSize: 11, margin: '0 0 16px' }}>A cake from a written spec</p>
 
+        {failed && <pre style={{ color: C.warn, whiteSpace: 'pre-wrap' }}>could not load: {failed}</pre>}
         {!check.ok && (
           <pre style={{ color: C.warn, whiteSpace: 'pre-wrap' }}>{check.problems.join('\n')}</pre>
         )}

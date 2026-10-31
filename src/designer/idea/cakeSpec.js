@@ -67,7 +67,11 @@ export function validateSpec(spec) {
     else cake.tiers.forEach((t, i) => {
       if (t && t.color !== undefined && !isStr(t.color)) p(`cake.tiers[${i}].color must be a colour string`);
     });
-    if (cake.weightKg !== undefined && !(isNum(cake.weightKg) && cake.weightKg > 0)) {
+    /* ⚠️ `null` IS "NOT GIVEN", NOT A BAD VALUE, and treating them alike rejected every real spec
+       the composer produced: it fills the optional half explicitly rather than omitting keys, so
+       `weightKg: null` is its honest way of saying a brief carried no size. Caught the first time
+       a composed bundle met this validator — the cake was fine and the whole spec was refused. */
+    if (cake.weightKg != null && !(isNum(cake.weightKg) && cake.weightKg > 0)) {
       p('cake.weightKg must be a positive number when given');
     }
   }
