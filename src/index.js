@@ -309,6 +309,12 @@ export {
   toConfig as fondantToConfig, FONDANT_BUILD_VERSION,
 } from './designer/geometry/fondantParts.js';
 export { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, iconTiers } from './designer/decorations/RainbowArrangements.jsx';
+// The generation wizard — one question at a time, so a vague answer does not cost a run. Exported
+// because the BAKER's studio is its destination and imports only flow core → admin: a wizard built
+// in admin would be built twice. It owns the step ORDER and nothing about decorations — the finished
+// prompt arrives as a string, so `buildDecorationPrompt` stays where `check:prompt-vocab` guards it.
+export { default as GenerationWizard } from './designer/decorations/GenerationWizard.jsx';
+export { generationSteps, stepAnswered, blankSteps, canAdvance, firstUnanswered } from './designer/decorations/generationSteps.js';
 export { rainbowBands, bandGeometry, bandPath, bandRadius, legFootY, archCenterX, requiredStandoff, rainbowBoardReach, rainbowFootReach, rainbowHandleAt, rainbowDragTo, wrapToWall, fitOnTopScale, rainbowGuide, springRange, RAINBOW_DEFAULTS } from './designer/geometry/rainbow.js';
 export { default as RainbowArch } from './designer/canvas/RainbowArch.jsx';
 // Fondant letter blocks. Layout is separate from the renderer for the same reason grass's is: one
