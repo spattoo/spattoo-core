@@ -1,7 +1,7 @@
 // Pure, config-driven placement logic — no React, no element-type branching. The designer and
 // the contract test both use these so behaviour can't silently diverge per element type.
-import { ZONES, PLACEMENT_MODES, STICKER_SIZE, SIDE_STICKER_SEAT_FRAC } from './constants.js';
-import { topClamp, snapToRim, tierShape, topContains, shapeReach } from './geometry/surface.js';
+import { ZONES, PLACEMENT_MODES, STICKER_SIZE, SIDE_STICKER_SEAT_FRAC, BOTTOM_H } from './constants.js';
+import { topClamp, snapToRim, tierShape, topContains, shapeReach, boardRingClamp } from './geometry/surface.js';
 
 // Default fraction of a tier's wall height a side-hug HERO decoration fills. Tunable per
 // element via placement_config.hug_fill.
@@ -996,4 +996,94 @@ export function zoneSeatFields(placementConfig, zone, mode = null) {
        off the wall and back must re-derive it rather than carry a stale one. */
     sideBend:      zoneBend(placementConfig, zone),
   };
+}
+
+
+/* ── Where a piece lands when a slot is ticked ───────────────────────────────────────────────────
+ *
+ * ⚠️ THIS LIVED INSIDE `CakeDesigner.jsx`, 13,400 LINES IN, AS A CLOSURE OVER THE WHOLE COMPONENT.
+ * It is the one function that answers "a baker ticked BOARD — where does the thing go", and every
+ * other half of that question — which slots exist (`placementSlots`), which poses the seat will
+ * honour (`zonePoses`), how big it may be (`scaleRangeOf`) — has always lived here. Only the seat
+ * itself was stranded, reachable by exactly one caller and testable by none.
+ *
+ * It is extracted now because a SECOND caller is coming: a composed design is assembled by seating
+ * pieces on slots, and a composer that re-derived the seat would be a second answer to this
+ * question. INVARIANTS #10 law 1 — one place says where a thing is — with the drag already honouring
+ * this seat, so a second implementation would disagree with the hand that moves it afterwards.
+ *
+ * ⚠️ IT TAKES ITS WORLD AS DATA, NOT AS IMPORTS, and that is deliberate. The board comes from
+ * `boardOf`, which lives in `canvas/CakeCanvas.jsx` — a React component that pulls three.js — and a
+ * pure placement module importing a renderer is the dependency that makes this file untestable
+ * again. `tierShapeAt` is in a hook for the same reason. So the caller, which already holds all
+ * three, hands them over: the heights, an accessor for a tier's outline, and the board.
+ *
+ *   slot  { zone, tierIndex, mode?, poseChoice? }   one entry from `placementSlots`
+ *   ctx   pc           the element's `placement_config`
+ *         tierHeights  heights in stack order; missing entries fall back to BOTTOM_H
+ *         shapeAt(i)   that tier's outline (`tierShapeAt(design.tiers, i)`)
+ *         baseShape    the bottom tier's outline as the BOARD CLAMP wants it
+ *         board        `boardOf(bottomTier)`, or null when there is none
+ *
+ * ⚠️ `shapeAt` AND `baseShape` ARE TWO ACCESSORS ON PURPOSE, and collapsing them is a silent
+ * behaviour change I made once while extracting this and caught by re-reading the original. The rim
+ * branch asked `tierShapeAt`, which overrides the tier's radius with `tierRadius`; the board branch
+ * asked `tierShape` on the raw tier, which does not. On any tier whose stored radius differs from
+ * its computed one, one accessor for both moves every board seat.
+ *
+ * Returns `{ mode, pos }` — the pose the seat actually honours, and the seat point.
+ */
+export function seatOnSlot(slot, { pc = {}, tierHeights = [], shapeAt = () => null, baseShape = null, board = null } = {}) {
+  let baseY = 0.1;
+  for (let i = 0; i < slot.tierIndex; i++) baseY += (tierHeights[i] ?? BOTTOM_H);
+  const tierH = tierHeights[slot.tierIndex] ?? BOTTOM_H;
+
+  /* Mode via zoneMode (never the raw value) so the { mode, seat } object form does not leak into
+     placementMode / edgeSeatSeed — INVARIANTS #1. The TILE's pose, not the zone default: picking
+     "Top hugging" has to seat it hugging. Flat surfaces are stood on, never hugged — see flatPose. */
+  const mode = flatPose(slot.zone, slot.mode ?? zoneMode(pc, slot.zone, 'hug'));
+
+  let pos;
+  if (slot.zone === ZONES.RIM) {
+    /* Rim: seed the front-edge seat + lean via the SAME helper addSticker uses, so the move path
+       (updateSticker) lands identically to the add path. */
+    const shp = shapeAt(slot.tierIndex);
+    const seed = edgeSeatSeed(pc, shp, mode);
+    pos = seed
+      ? { x: seed.x, z: seed.z, tiltAngle: seed.tiltAngle, yOffset: seed.yOffset }
+      /* Non-edge rim modes get a bare front-edge point — via the same one accessor edgeSeatSeed
+         uses, so an outline tier (no `radius` field) yields a real edge instead of NaN. */
+      : { x: 0, z: shapeReach(shp, { x: 0, z: 1 }) };
+  } else if (slot.zone === ZONES.TOP_SURFACE) {
+    pos = { x: 0, z: 0 };
+  } else if (slot.zone === ZONES.BOARD) {
+    /* Board: seat it on the drum, in FRONT of the cake.
+     *
+     * ⚠️ Without this branch a board slot fell through to the `else` below and got a SIDE seat
+     * (theta + a mid-wall height) — a decoration meant to stand on the board, hung on the wall.
+     *
+     * (0,0) is the cake's centre and boardRingClamp answers exactly this question: it has no
+     * outward direction to push, so it sends the point to the front of the ring, which is where a
+     * board decoration is always visible and most likely wanted. The same call the drag uses, so
+     * the seat and every later move agree by construction. */
+    const boardShp = board && (board.kind === 'rect'
+      ? { kind: 'rect', halfW: board.halfW, halfD: board.halfD }
+      : { kind: 'round', radius: board.radius });
+    const seat = boardShp
+      ? boardRingClamp(boardShp, baseShape ?? tierShape({}), 0, 0)
+      : { x: 0, z: 0 };
+    pos = { x: seat.x, z: seat.z };
+  } else {
+    pos = { theta: 0, y: baseY + tierH * 0.45 };
+  }
+
+  /* Insert modifier (top or side): if the target zone carries an `insert` modifier, re-bake the
+     lean/fan/depth via the SAME helper the add path uses, so a moved insert does not lose its angle
+     (the caller's reset zeroes tiltAngle/rollAngle/rotation). Composes with the zone's pose. */
+  const zi = zoneInsert(pc, slot.zone);
+  if (zi) {
+    const s = insertSeat(zi);
+    pos = { ...pos, tiltAngle: s.tiltAngle, rotation: s.fanYaw, insertDepth: s.depthFrac };
+  }
+  return { mode, pos };
 }

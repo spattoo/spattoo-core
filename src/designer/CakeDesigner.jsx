@@ -24,7 +24,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading, whenCaptureIdle } from './canvas/loadingRegistry.js';
-import { isSinglePerSlot, placementSlots, flatPose, zonePoses, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
+import { isSinglePerSlot, placementSlots, flatPose, zonePoses, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP , seatOnSlot as seatPieceOnSlot } from './placement.js';
 import { corsUrl, assetUrl, elementIs3D } from './utils/assetUrl.js';
 import { registerRenderVariants } from './shared/renderVariants.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
@@ -13395,62 +13395,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // matching on it would show a placed element as unplaced.
     const onSlot = (sk, slot) =>
       sameSurface(sk, slot) && (!slot.poseChoice || sk.placementMode === slot.mode);
-    // How the element sits on a slot comes ENTIRELY from config (placement_config[zone]) — never a
-    // hardcoded per-zone default (INVARIANTS #1). Position is just the seat point on that surface.
-    const seatOnSlot = slot => {
-      let baseY = 0.1;
-      for (let i = 0; i < slot.tierIndex; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
-      const tierH = canvasConfig.tiers[slot.tierIndex]?.height ?? BOTTOM_H;
-      // Mode via zoneMode (never the raw value) so the { mode, seat } object form doesn't leak into
-      // placementMode / edgeSeatSeed — INVARIANTS #1.
-      // The TILE's pose, not the zone default — picking "Top hugging" has to seat it hugging.
-      // Flat surfaces are stood on, never hugged — see flatPose.
-      const mode = flatPose(slot.zone, slot.mode ?? zoneMode(pc, slot.zone, 'hug'));
-      // Rim: seed the front-edge seat + lean via the SAME helper addSticker uses, so the move path
-      // (updateSticker) lands identically to the add path. Non-edge rim modes get a bare edge point.
-      let pos;
-      if (slot.zone === ZONES.RIM) {
-        const shp = tierShapeAt(design.tiers, slot.tierIndex);
-        const seed = edgeSeatSeed(pc, shp, mode);
-        pos = seed
-          ? { x: seed.x, z: seed.z, tiltAngle: seed.tiltAngle, yOffset: seed.yOffset }
-          // Non-edge rim modes get a bare front-edge point — via the same one accessor edgeSeatSeed
-          // uses, so an outline tier (no `radius` field) yields a real edge instead of NaN.
-          : { x: 0, z: shapeReach(shp, { x: 0, z: 1 }) };
-      } else if (slot.zone === ZONES.TOP_SURFACE) {
-        pos = { x: 0, z: 0 };
-      } else if (slot.zone === ZONES.BOARD) {
-        /* Board: seat it on the drum, in FRONT of the cake.
-         *
-         * ⚠️ Without this branch a board slot fell through to the `else` below and got a SIDE seat
-         * (theta + a mid-wall height) — a decoration meant to stand on the board, hung on the wall.
-         *
-         * (0,0) is the cake's centre and boardRingClamp answers exactly this question: it has no
-         * outward direction to push, so it sends the point to the front of the ring, which is where
-         * a board decoration is always visible and most likely wanted. The same call the drag uses,
-         * so the seat and every later move agree by construction. */
-        const bt = canvasConfig.tiers[0];
-        const board = bt ? boardOf(bt) : null;
-        const boardShp = board && (board.kind === 'rect'
-          ? { kind: 'rect', halfW: board.halfW, halfD: board.halfD }
-          : { kind: 'round', radius: board.radius });
-        const seat = boardShp
-          ? boardRingClamp(boardShp, tierShape(design.tiers[0] ?? {}), 0, 0)
-          : { x: 0, z: 0 };
-        pos = { x: seat.x, z: seat.z };
-      } else {
-        pos = { theta: 0, y: baseY + tierH * 0.45 };
-      }
-      // Insert modifier (top or side): if the target zone carries an `insert` modifier, re-bake the
-      // lean/fan/depth via the SAME helper the add path uses, so a moved insert doesn't lose its angle
-      // (the reset below zeroes tiltAngle/rollAngle/rotation). Composes with the zone's pose (`mode`).
-      const zi = zoneInsert(pc, slot.zone);
-      if (zi) {
-        const s = insertSeat(zi);
-        pos = { ...pos, tiltAngle: s.tiltAngle, rotation: s.fanYaw, insertDepth: s.depthFrac };
-      }
-      return { mode, pos };
+    /* How the element sits on a slot comes ENTIRELY from config (placement_config[zone]) — never a
+       hardcoded per-zone default (INVARIANTS #1). Position is just the seat point on that surface.
+       ⚠️ THE SEAT ITSELF MOVED TO `placement.js`, beside the three functions that answer the rest of
+       the same question — which slots exist, which poses a seat honours, how big a piece may be.
+       It was a closure over this whole component, so it had one caller and no test; a composed
+       design seats pieces the same way, and two answers to "where does it go" would disagree with
+       the drag that moves it afterwards (INVARIANTS #10 law 1). What stays here is the WORLD it
+       needs — the heights, the outlines and the board — because `boardOf` lives in the canvas and a
+       pure module must not import a renderer to find out where a drum is. */
+    const seatCtx = {
+      pc,
+      tierHeights: (canvasConfig.tiers ?? []).map(t => t?.height ?? BOTTOM_H),
+      shapeAt: i => tierShapeAt(design.tiers, i),
+      /* Not `shapeAt(0)` — see the note on seatOnSlot. The board clamp was handed the RAW bottom
+         tier, without tierRadius's override, and the two differ wherever a stored radius does. */
+      baseShape: tierShape(design.tiers[0] ?? {}),
+      board: canvasConfig.tiers[0] ? boardOf(canvasConfig.tiers[0]) : null,
     };
+    const seatOnSlot = slot => seatPieceOnSlot(slot, seatCtx);
     // One tile per zone × POSE. A jersey that stands or lies on the top gets two previews of the
     // real thing (TopperPreview renders from `mode`), so the choice is made the same way the surface
     // is — not by a separate control the customer has to find afterwards. Single-pose zones expand to
